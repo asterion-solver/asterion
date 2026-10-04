@@ -41,8 +41,14 @@ import java.util.List;
  */
 public final class PlateSolver {
     private static final double STRICT_CODE_TOLERANCE = 0.004;
-    /** The search radius around the position found in image files, in degrees. */
+    /** The radius of the search around a position which is only a hint, such as one of an image file, in degrees. */
     private static final double HINT_SEARCH_RADIUS_DEG = 10;
+    /**
+     * The stars which build quads when searching around a position which is only a hint: a right
+     * position solves with the first quads, and a wrong one is given up quickly, before the search
+     * goes on without it. The cost of an unsuccessful search grows with the cube of this number.
+     */
+    private static final int HINT_QUAD_STARS = 30;
     /** The relative error which is tolerated on the scale found in image files. */
     private static final double HINT_SCALE_TOLERANCE = 0.25;
 
@@ -95,6 +101,57 @@ public final class PlateSolver {
     }
 
     /**
+     * A search of the plan.
+     *
+     * @param hinted true if the search uses hints, rather than only the limits of the options
+     */
+    private record Attempt(
+            SolverOptions options,
+            boolean hinted) {
+    }
+
+    /**
+     * Plans the searches. Hints, such as the position and the scale found in an image file, only
+     * order the search: the position and the scale of the options are limits, which are never
+     * exceeded. The search starts around the hinted position, or the center of the region of the
+     * options, at any scale: a right position solves with the first quads whatever the scale, which
+     * is less reliable than positions. Then the region, or the whole sky if a blind search is
+     * allowed, is searched at the hinted scale, then at any scale.
+     */
+    private static List<Attempt> plan(ImageHints hints, SolverOptions options) {
+        var explicitPosition = options.hasPosition();
+        var explicitScale = options.minScale() > 0 || options.maxScale() > 0;
+        var attempts = new ArrayList<Attempt>();
+        if (explicitPosition && options.searchRadiusDeg() > HINT_SEARCH_RADIUS_DEG) {
+            attempts.add(
+                    new Attempt(options.toBuilder().position(options.raDeg(), options.decDeg(), HINT_SEARCH_RADIUS_DEG).build(), false));
+        } else if (!explicitPosition && options.useImageHints() && hints.hasPosition()) {
+            attempts.add(new Attempt(options.toBuilder()
+                    .position(hints.raDeg().orElseThrow(), hints.decDeg().orElseThrow(), HINT_SEARCH_RADIUS_DEG)
+                    .build(), true));
+        }
+        // beyond the hinted position: the region of the options, or the whole sky
+        var beyond = explicitPosition || options.blindFallback() || attempts.isEmpty();
+        if (!explicitScale && options.useImageHints() && hints.pixelScale().isPresent() && beyond) {
+            var scale = hints.pixelScale().orElseThrow();
+            attempts.add(new Attempt(
+                    options.toBuilder().scale(scale * (1 - HINT_SCALE_TOLERANCE), scale * (1 + HINT_SCALE_TOLERANCE)).build(), true));
+        }
+        if (beyond) {
+            attempts.add(new Attempt(options, false));
+        }
+        if (attempts.size() > 1 && attempts.getFirst().options().searchRadiusDeg() == HINT_SEARCH_RADIUS_DEG
+                && attempts.getFirst().options().hasPosition()) {
+            // the search around the position is given up quickly when it's wrong
+            var first = attempts.getFirst();
+            attempts.set(0, new Attempt(first.options().toBuilder()
+                    .maxQuadStars(Math.min(options.maxQuadStars(), HINT_QUAD_STARS))
+                    .build(), first.hinted()));
+        }
+        return attempts;
+    }
+
+    /**
      * Solves a list of stars.
      *
      * @param stars the stars, sorted by decreasing brightness
@@ -119,29 +176,7 @@ public final class PlateSolver {
             }
             options = options.toBuilder().fieldOfView(0, 0).scale(min, max).build();
         }
-        // a first attempt with the hints of the image, then a second one without
-        var explicitPosition = options.hasPosition();
-        var explicitScale = options.minScale() > 0 || options.maxScale() > 0;
-        var attempts = new ArrayList<SolverOptions>();
-        var hinted = false;
-        if (options.useImageHints()) {
-            var b = options.toBuilder();
-            if (!explicitPosition && hints.hasPosition()) {
-                b.position(hints.raDeg().orElseThrow(), hints.decDeg().orElseThrow(), HINT_SEARCH_RADIUS_DEG);
-                hinted = true;
-            }
-            if (!explicitScale && hints.pixelScale().isPresent()) {
-                var scale = hints.pixelScale().orElseThrow();
-                b.scale(scale * (1 - HINT_SCALE_TOLERANCE), scale * (1 + HINT_SCALE_TOLERANCE));
-                hinted = true;
-            }
-            if (hinted) {
-                attempts.add(b.build());
-            }
-        }
-        if (!hinted || options.blindFallback()) {
-            attempts.add(options);
-        }
+        var attempts = plan(hints, options);
         var x = stars.x();
         var y = stars.y();
         var quads = 0L;
@@ -150,8 +185,8 @@ public final class PlateSolver {
         Solution solution = null;
         var usedHints = false;
         attempts:
-        for (var attempt = 0; attempt < attempts.size(); attempt++) {
-            var o = attempts.get(attempt);
+        for (var attempt : attempts) {
+            var o = attempt.options();
             var hint = o.hasPosition() ? QuadSearch.vector(o.raDeg(), o.decDeg()) : null;
             // Most images match with a tolerance which is much smaller than what distorted images
             // require, and which gives far fewer false matches to verify: when the whole sky is
@@ -177,7 +212,7 @@ public final class PlateSolver {
                     }
                     solution = new Refiner(deepest, stars, width, height, o, epoch - deepest.epoch()).refine(h);
                     if (solution != null) {
-                        usedHints = hinted && attempt == 0;
+                        usedHints = attempt.hinted();
                         break attempts;
                     }
                 }

@@ -17,8 +17,8 @@ Every statement below comes from one of these sources, and says which one when t
   [isbeorn/nina](https://github.com/isbeorn/nina) (master, 2025-11).
 - **CCDciel**: `src/cu_astrometry_engine.pas` in [pchev/ccdciel](https://github.com/pchev/ccdciel)
   (master, 2026-10).
-- **SharpCap**: closed source, its invocation of ASTAP is **not verified** (see
-  [open questions](#open-questions)).
+- **SharpCap**: closed source. Its command line was **observed** with SharpCap on Windows, through the
+  log of command lines of Asterion's ASTAP compatibility mode (2026-10).
 
 ## Executables
 
@@ -35,7 +35,7 @@ The manual says that `astap_cli.exe` "can be renamed to astap.exe". Clients refe
 |---|---|
 | N.I.N.A. | any path, configured by the user |
 | CCDciel | `<folder>/astap` on Linux and macOS, `<folder>\astap.exe` on Windows: the name is fixed, the folder is configured |
-| SharpCap | not verified |
+| SharpCap | `astap.exe` in a folder which is configured (observed) |
 
 ## Input
 
@@ -262,8 +262,20 @@ Verified from its source.
 
 ### SharpCap
 
-Not verified: its source isn't available. To be determined by logging the command lines it uses (see
-[open questions](#open-questions)).
+Observed, its source isn't available.
+
+- Saves the image as `frame.fits`, in a folder of its own in the temporary directory:
+  `%TEMP%\<random UUID>\frame.fits`.
+- Runs:
+  ```
+  <folder>\astap.exe -f <temp>\<uuid>\frame.fits -ra <hours> -spd <dec + 90> -r 180.000 -z 0 -log -fov <height>
+  ```
+  Numbers have 3 decimals, except `-fov` which has 2. **The start position comes with a radius of 180**:
+  the whole sky, searched from the start position, so the position only says where to start.
+- **`-fov` comes from the settings of SharpCap**, and may be wrong: with a field of view 1.15° high,
+  SharpCap passed `-fov 0.20`. ASTAP warns about it in the `.ini` (`Warning scale was inaccurate!`).
+- Solves with Asterion's ASTAP compatibility mode. Which of the `.ini` and `.wcs` files it reads isn't
+  known yet.
 
 ## Requirements for Asterion
 
@@ -289,11 +301,13 @@ What a drop-in replacement needs, from the above:
 7. **Windows**: the executable needs a file version resource, or N.I.N.A. refuses automatic
    downsampling.
 8. **Diagnostics**: log the command lines received, to find out what clients such as SharpCap pass.
+9. **Search order**: like ASTAP, search around the start position first, even when the radius is 180,
+   and only then the whole sky. Don't trust `-fov` too much: SharpCap passes a wrong one when its
+   settings are wrong, so the search around the start position ignores it.
 
 ## Open questions
 
-- **SharpCap**: which executable name and options it uses, and whether it reads the `.ini`, the `.wcs`,
-  or both.
+- **SharpCap**: whether it reads the `.ini`, the `.wcs`, or both.
 - **Windows line endings**: whether `.ini` and text `.wcs` files use CRLF on Windows, as the manual
   suggests for the `.wcs`.
 - **GUI exit codes**: whether the GUI program `astap`, which CCDciel calls, returns the documented exit
