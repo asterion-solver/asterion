@@ -1,0 +1,75 @@
+name: Release
+
+# Releases a version: the native executables are built on each platform with that version, then
+# JReleaser tags the current commit, and publishes a GitHub release with the archives, their
+# checksums and a changelog.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version to release, for example 1.0.0'
+        type: string
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the version
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Invalid version '$VERSION', expected something like 1.0.0 or 1.0.0-rc.1"
+            exit 1
+          fi
+          if [[ "$VERSION" == *-SNAPSHOT ]]; then
+            echo "::error::Snapshot versions can't be released"
+            exit 1
+          fi
+
+  build:
+    needs: check
+    uses: ./.github/workflows/native.yml
+    with:
+      version: ${{ inputs.version }}
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # the whole history, for the changelog
+          fetch-depth: 0
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: 'graalvm'
+          java-version: '25'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: gradle/actions/setup-gradle@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts
+          merge-multiple: true
+      - name: Release
+        env:
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew jreleaserFullRelease -Pversion=${{ inputs.version }}
+      - name: JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-output
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties

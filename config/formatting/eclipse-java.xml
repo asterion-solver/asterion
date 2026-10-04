@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  The formatting rules of Java sources, applied by `./gradlew format` and checked by `./gradlew check`.
+  Settings which aren't listed have the default value of the Eclipse formatter. IntelliJ IDEA can import
+  this file: Settings > Editor > Code Style > Java > Import Scheme > Eclipse XML Profile.
+-->
+<profiles version="23">
+    <profile kind="CodeFormatterProfile" name="Asterion" version="23">
+        <!-- indentation: 4 spaces, 8 for continuation lines -->
+        <setting id="org.eclipse.jdt.core.formatter.tabulation.char" value="space"/>
+        <setting id="org.eclipse.jdt.core.formatter.tabulation.size" value="4"/>
+        <setting id="org.eclipse.jdt.core.formatter.indentation.size" value="4"/>
+        <setting id="org.eclipse.jdt.core.formatter.continuation_indentation" value="2"/>
+        <setting id="org.eclipse.jdt.core.formatter.continuation_indentation_for_array_initializer" value="2"/>
+        <!-- lines are wrapped beyond 140 characters, and line breaks made by hand are kept -->
+        <setting id="org.eclipse.jdt.core.formatter.lineSplit" value="140"/>
+        <setting id="org.eclipse.jdt.core.formatter.join_wrapped_lines" value="false"/>
+        <!-- record components: one per line, always -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_record_components" value="49"/>
+        <!-- parameters of methods and constructors: aligned on the first one when they are wrapped -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_method_declaration" value="18"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_parameters_in_constructor_declaration" value="18"/>
+        <!-- the throws clause stays on the line of the last parameter -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_throws_clause_in_method_declaration" value="0"/>
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_throws_clause_in_constructor_declaration" value="0"/>
+        <!-- resources of try statements: aligned on the first one -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_resources_in_try" value="82"/>
+        <!-- labels are on their own line -->
+        <setting id="org.eclipse.jdt.core.formatter.insert_new_line_after_label" value="insert"/>
+        <setting id="org.eclipse.jdt.core.formatter.insert_space_before_colon_in_labeled_statement" value="do not insert"/>
+        <!-- enum constants: one per line, always -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_enum_constants" value="49"/>
+        <!-- annotations: their arguments are wrapped when they are too long, never joined -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_arguments_in_annotation" value="16"/>
+        <!-- conditional expressions: the first branch stays on the line of the condition -->
+        <setting id="org.eclipse.jdt.core.formatter.alignment_for_conditional_expression" value="16"/>
+        <!-- comments are written by hand: Javadoc contains HTML and tables which must not be reflowed -->
+        <setting id="org.eclipse.jdt.core.formatter.comment.format_javadoc_comments" value="false"/>
+        <setting id="org.eclipse.jdt.core.formatter.comment.format_block_comments" value="false"/>
+        <setting id="org.eclipse.jdt.core.formatter.comment.format_line_comments" value="false"/>
+        <setting id="org.eclipse.jdt.core.formatter.comment.format_header" value="false"/>
+        <!-- `// @formatter:off` and `// @formatter:on` exclude code from formatting -->
+        <setting id="org.eclipse.jdt.core.formatter.use_on_off_tags" value="true"/>
+    </profile>
+</profiles>

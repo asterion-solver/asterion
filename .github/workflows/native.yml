@@ -1,0 +1,76 @@
+name: Native executables
+
+# Builds and tests the project, then packages the native executable, on each supported platform.
+# The archives are uploaded as artifacts named `native-<platform>`.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'The version to build, defaults to the one of gradle.properties'
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  native:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch_64
+          - os: macos-15-intel
+            platform: osx-x86_64
+          - os: macos-15
+            platform: osx-aarch_64
+          - os: windows-2025
+            platform: windows-x86_64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: 'graalvm'
+          java-version: '25'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Test and build the native executable
+        shell: bash
+        run: ./gradlew check nativeCompile ${{ inputs.version != '' && format('-Pversion={0}', inputs.version) || '' }}
+      # N.I.N.A. reads the version of the executable it calls as ASTAP, and refuses automatic
+      # downsampling when there is none: native-image doesn't write one
+      - name: Add a version resource
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          name=$(grep '^executableName=' gradle.properties | cut -d= -f2)
+          version='${{ inputs.version }}'
+          version=${version:-$(grep '^version=' gradle.properties | cut -d= -f2)}
+          # Windows versions are numbers only
+          numeric=${version%%-*}
+          curl -sSfL -o rcedit.exe https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
+          ./rcedit.exe "asterion-cli/build/native/nativeCompile/$name.exe" \
+            --set-file-version "$numeric" --set-product-version "$numeric" \
+            --set-version-string ProductName "Asterion Solver" \
+            --set-version-string FileDescription "Asterion Solver" \
+            --set-version-string ProductVersion "$version"
+      - name: Package the native executable
+        shell: bash
+        # the executable is not built again, which would remove the version resource
+        run: ./gradlew nativeZip -x nativeCompile ${{ inputs.version != '' && format('-Pversion={0}', inputs.version) || '' }}
+      - name: Smoke test
+        shell: bash
+        run: |
+          name=$(grep '^executableName=' gradle.properties | cut -d= -f2)
+          ./asterion-cli/build/native/nativeCompile/$name --version
+          # the ASTAP compatibility mode
+          ./asterion-cli/build/native/nativeCompile/$name astap -h
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: asterion-cli/build/distributions/*-${{ matrix.platform }}.zip
+          if-no-files-found: error

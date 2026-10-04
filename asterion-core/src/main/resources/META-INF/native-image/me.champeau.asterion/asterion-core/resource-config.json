@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": "\\QMETA-INF/services/nom.tam.fits.compress.ICompressProvider\\E"
+      },
+      {
+        "pattern": "\\QMETA-INF/services/nom.tam.fits.compression.provider.api.ICompressorProvider\\E"
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+[versions]
+java = "25"
+fits = "1.22.2"
+picocli = "4.7.7"
+tamboui = "0.5.0"
+graalvm-sdk = "25.0.0"
+junit = "6.1.3"
+graalvm-native-plugin = "1.1.14"
+spotless-plugin = "8.10.3"
+
+[libraries]
+fits = { module = "gov.nasa.gsfc.heasarc:nom-tam-fits", version.ref = "fits" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+picocli-codegen = { module = "info.picocli:picocli-codegen", version.ref = "picocli" }
+tamboui-toolkit = { module = "dev.tamboui:tamboui-toolkit", version.ref = "tamboui" }
+tamboui-panama-backend = { module = "dev.tamboui:tamboui-panama-backend", version.ref = "tamboui" }
+graalvm-nativeimage = { module = "org.graalvm.sdk:nativeimage", version.ref = "graalvm-sdk" }
+
+# Build plugins, consumed by build-logic
+graalvm-native-plugin = { module = "org.graalvm.buildtools:native-gradle-plugin", version.ref = "graalvm-native-plugin" }
+spotless-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless-plugin" }

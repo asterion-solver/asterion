@@ -1,0 +1,675 @@
+[
+  {
+    "name": "nom.tam.fits.compress.BZip2CompressionProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.BasicCompressProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.CloseIS",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.CompressionLibLoaderProtection",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.CompressionManager",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.ExternalBZip2CompressionProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.GZipCompressionProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.ICompressProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.ZCompressionProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compress.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.api.ICompressOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.api.ICompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.api.ICompressorControl",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.api.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$ByteGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$DoubleGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$FloatGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$IntGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$LongGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$ShortGZipCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.GZipCompressor$TypeConversion",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$ByteGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$DoubleGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$FloatGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$IntGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$LongGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.GZip2Compressor$ShortGZip2Compressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.gzip2.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompress",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor$ByteHCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor$DoubleHCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor$FloatHCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor$IntHCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressor$ShortHCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressorOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressorOption$Config",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HCompressorQuantizeOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HDecompress",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.HDecompress$LongArrayPointer",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.hcompress.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.plio.PLIOCompress",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.plio.PLIOCompress$BytePLIOCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.plio.PLIOCompress$IntPLIOCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.plio.PLIOCompress$ShortPLIOCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.plio.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.Quantize",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.Quantize$DoubleArrayPointer",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeOption$Config",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$BaseFilter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$DitherFilter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$DoubleQuantCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$FloatQuantCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$NullFilter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$PixelFilter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.QuantizeProcessor$ZeroFilter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.RandomSequence",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.quant.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.BitBuffer",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressOption$Config",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor$ByteRiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor$DoubleRiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor$FloatRiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor$IntRiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceCompressor$ShortRiceCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.RiceQuantizeCompressOption",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.rice.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$ByteNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$DoubleNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$FloatNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$IntNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$LongNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.NoCompressCompressor$ShortNoCompressCompressor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.algorithm.uncompressed.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.CompressorControlNameComputer",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.CompressorProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.CompressorProvider$TileCompressorControl",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.api.ICompressorProvider",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.api.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.HeaderAccess",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.HeaderCardAccess",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.ICompressColumnParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.ICompressHeaderParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.ICompressParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.ICompressParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.IHeaderAccess",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.api.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.BundledParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.CompressColumnParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.CompressColumnParameter$Data",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.CompressHeaderParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.CompressParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.CompressParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.base.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.hcompress.HCompressParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.hcompress.HCompressScaleParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.hcompress.HCompressSmoothParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.hcompress.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.QuantizeParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZBlankColumnParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZBlankParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZDither0Parameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZQuantizeParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZScaleColumnParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.ZZeroColumnParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.quant.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.rice.RiceBlockSizeParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.rice.RiceBytePixParameter",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.rice.RiceCompressParameters",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "nom.tam.fits.compression.provider.param.rice.package-info",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "byte[]"
+  },
+  {
+    "name": "byte[][]"
+  },
+  {
+    "name": "byte[][][]"
+  },
+  {
+    "name": "short[]"
+  },
+  {
+    "name": "short[][]"
+  },
+  {
+    "name": "short[][][]"
+  },
+  {
+    "name": "int[]"
+  },
+  {
+    "name": "int[][]"
+  },
+  {
+    "name": "int[][][]"
+  },
+  {
+    "name": "long[]"
+  },
+  {
+    "name": "long[][]"
+  },
+  {
+    "name": "long[][][]"
+  },
+  {
+    "name": "float[]"
+  },
+  {
+    "name": "float[][]"
+  },
+  {
+    "name": "float[][][]"
+  },
+  {
+    "name": "double[]"
+  },
+  {
+    "name": "double[][]"
+  },
+  {
+    "name": "double[][][]"
+  },
+  {
+    "name": "boolean[]"
+  },
+  {
+    "name": "boolean[][]"
+  },
+  {
+    "name": "boolean[][][]"
+  },
+  {
+    "name": "char[]"
+  },
+  {
+    "name": "char[][]"
+  },
+  {
+    "name": "char[][][]"
+  },
+  {
+    "name": "nom.tam.image.compression.tile.TileCompressionOperation[]"
+  },
+  {
+    "name": "nom.tam.image.tile.operation.ITileOperation[]"
+  }
+]
