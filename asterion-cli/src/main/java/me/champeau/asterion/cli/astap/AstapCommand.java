@@ -154,74 +154,44 @@ public final class AstapCommand {
             return AstapOutcome.failure(AstapStatus.IMAGE_ERROR, warnings);
         }
         var image = loaded.image();
-        var hints = loaded.hints();
-        var options = SolverOptions.builder()
-                // the hints of the image are applied here, with the radius of the command line
-                .useImageHints(false)
-                .blindFallback(false)
-                .sipOrder(arguments.sip() ? -1 : 0)
-                .timeout(TIMEOUT);
-        var raDeg = arguments.hasPosition() ? arguments.raHours() * 15 : hints.raDeg().orElse(Double.NaN);
-        var decDeg = arguments.hasPosition() ? arguments.southPoleDistanceDeg() - 90 : hints.decDeg().orElse(Double.NaN);
-        var hasPosition = !Double.isNaN(raDeg) && !Double.isNaN(decDeg);
+        // the options of the command line are hints, like the values of the FITS header which they replace
+        var hints = loaded.hints().toBuilder();
+        if (arguments.hasPosition()) {
+            hints.position(arguments.raHours() * 15, arguments.southPoleDistanceDeg() - 90);
+        }
+        if (arguments.fovDeg() > 0) {
+            hints.pixelScale(arguments.fovDeg() * 3600 / image.sourceHeight());
+        } else if (arguments.fovDeg() == 0) {
+            // -fov 0 means an unknown scale, even if the header gives one
+            hints.pixelScale(Double.NaN);
+        }
+        var imageHints = hints.build();
+        var raDeg = imageHints.raDeg().orElse(Double.NaN);
+        var decDeg = imageHints.decDeg().orElse(Double.NaN);
+        var scale = imageHints.pixelScale().orElse(Double.NaN);
         var radius = Double.isNaN(arguments.radiusDeg()) ? DEFAULT_RADIUS_DEG : arguments.radiusDeg();
         // ASTAP searches a square around the start position: the cone contains it
         var cone = Math.min(WHOLE_SKY_DEG, radius * Math.sqrt(2));
-        if (hasPosition) {
+        var options = SolverOptions.builder()
+                .sipOrder(arguments.sip() ? -1 : 0)
+                .timeout(TIMEOUT);
+        if (imageHints.hasPosition()) {
             print("Search radius: " + (cone >= WHOLE_SKY_DEG ? "whole sky" : AstapNumbers.fixed("%.1f", radius) + " degrees"));
             print("Start position: " + AstapNumbers.ra(raDeg) + ", " + AstapNumbers.dec(decDeg));
+            if (cone < WHOLE_SKY_DEG) {
+                // the radius is a limit: the start position is where the search starts in any case
+                options.position(raDeg, decDeg, cone);
+            }
         } else {
             print("Search radius: whole sky");
         }
-        // -fov 0 means an unknown scale, even if the header gives one
-        var scale = arguments.fovDeg() > 0 ? arguments.fovDeg() * 3600 / image.sourceHeight()
-                : Double.isNaN(arguments.fovDeg()) ? hints.pixelScale().orElse(Double.NaN) : Double.NaN;
-        if (!Double.isNaN(scale)) {
-            print("Image height: " + AstapNumbers.fixed("%.2f", scale * image.sourceHeight() / 3600) + " degrees");
-        } else {
-            print("Image height: unknown");
-        }
+        print("Image height: "
+                + (Double.isNaN(scale) ? "unknown" : AstapNumbers.fixed("%.2f", scale * image.sourceHeight() / 3600) + " degrees"));
         print("Binning: " + image.binning() + "x" + image.binning());
         print("Image dimensions: " + image.sourceWidth() + "x" + image.sourceHeight());
-        // Like ASTAP, the search starts around the start position, and widens up to the radius. Around
-        // the start position, the scale is ignored: it doesn't make the search faster, while a wrong
-        // field of view, which some programs pass, would make it fail slowly
-        var attempts = new ArrayList<SolverOptions>();
-        var nearby = hasPosition && cone > PlateSolver.HINT_SEARCH_RADIUS_DEG;
-        if (nearby) {
-            attempts.add(
-                    options.position(raDeg, decDeg, PlateSolver.HINT_SEARCH_RADIUS_DEG).maxQuadStars(PlateSolver.HINT_QUAD_STARS).build());
-            options.maxQuadStars(SolverOptions.defaults().maxQuadStars());
-        }
-        if (hasPosition && cone < WHOLE_SKY_DEG) {
-            options.position(raDeg, decDeg, cone);
-        } else {
-            options.position(Double.NaN, Double.NaN, WHOLE_SKY_DEG);
-        }
-        if (!Double.isNaN(scale)) {
-            attempts.add(options.scale(scale * (1 - SCALE_TOLERANCE), scale * (1 + SCALE_TOLERANCE)).build());
-            options.scale(0, 0);
-        }
-        attempts.add(options.build());
-        SolveResult result = null;
-        for (var attempt : attempts) {
-            if (result == null) {
-                result = solver.solve(image, hints, attempt);
-                print(result.stars().size() + " stars detected in the image.");
-                if (result.stars().size() < MIN_STARS) {
-                    break;
-                }
-            } else {
-                print("No solution yet, searching " + (attempt.hasPosition()
-                        ? "within " + AstapNumbers.fixed("%.1f", attempt.searchRadiusDeg()) + " degrees of the start position"
-                        : "the whole sky")
-                        + (attempt.minScale() > 0 ? " at the expected scale." : " at any scale."));
-                result = solver.solve(result.stars(), image.sourceWidth(), image.sourceHeight(), hints, attempt);
-            }
-            if (result.solved()) {
-                break;
-            }
-        }
+        // the solver searches around the start position first, then at the expected scale, then at any scale
+        var result = solver.solve(image, imageHints, options.build());
+        print(result.stars().size() + " stars detected in the image.");
         var seconds = (System.nanoTime() - start) / 1e9;
         if (!result.solved()) {
             if (result.stars().size() < MIN_STARS) {
@@ -234,7 +204,7 @@ public final class AstapCommand {
         if (!Double.isNaN(scale) && Math.abs(solution.pixelScale() / scale - 1) > SCALE_WARNING) {
             warnings.add(scaleWarning(solution, result, image.sourceHeight()));
         }
-        var offset = hasPosition ? distance(raDeg, decDeg, solution.raDeg(), solution.decDeg()) : Double.NaN;
+        var offset = imageHints.hasPosition() ? distance(raDeg, decDeg, solution.raDeg(), solution.decDeg()) : Double.NaN;
         return new AstapOutcome(AstapStatus.SOLVED, null, solution, List.copyOf(warnings), seconds, offset);
     }
 

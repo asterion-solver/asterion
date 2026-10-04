@@ -46,6 +46,17 @@ public final class ImageHints {
         return NONE;
     }
 
+    /** A builder with the values of these hints, to change some of them. */
+    public Builder toBuilder() {
+        return builder()
+                .raDeg(raDeg)
+                .decDeg(decDeg)
+                .pixelScale(pixelScale)
+                .epoch(epoch)
+                .pixelSizeMicrons(pixelSizeMicrons)
+                .bayer(bayer);
+    }
+
     public static Builder builder() {
         return new Builder();
     }

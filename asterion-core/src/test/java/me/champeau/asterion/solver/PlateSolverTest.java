@@ -108,6 +108,42 @@ class PlateSolverTest {
     }
 
     @Test
+    void searchesAroundTheHintedPositionWhateverTheHintedScale() {
+        var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 150, 35, 22, 77, false);
+        // a scale which is 5 times too small, like a wrong focal length in a FITS header
+        var hints = ImageHints.builder().position(152, 33).pixelScale(22 / 5.0).build();
+        var result = solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, hints, SolverOptions.defaults());
+        assertTrue(result.solved());
+        assertTrue(result.stats().usedHints(), "solved around the hinted position");
+        assertTrue(SyntheticSky.separation(truth, result.solution().orElseThrow().wcs(), 800, 600) < 3);
+    }
+
+    @Test
+    void searchesBeyondAWrongHintedPosition() {
+        var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 150, 35, 22, 77, false);
+        var hints = ImageHints.builder().position(300, -40).pixelScale(22).build();
+        var result = solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, hints, SolverOptions.defaults());
+        assertTrue(result.solved());
+        assertTrue(SyntheticSky.separation(truth, result.solution().orElseThrow().wcs(), 800, 600) < 3);
+        // without a blind search, the hinted position is the only one which is searched
+        var withoutFallback = solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, hints,
+                SolverOptions.builder().blindFallback(false).build());
+        assertFalse(withoutFallback.solved());
+    }
+
+    @Test
+    void neverSearchesBeyondTheRegionOfTheOptions() {
+        var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 150, 35, 22, 77, false);
+        var outside = SolverOptions.builder().position(300, -40, 5).build();
+        assertFalse(solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, ImageHints.none(), outside).solved());
+        // a wide region is searched from its center first, then entirely
+        var wide = SolverOptions.builder().position(170, 20, 40).build();
+        var result = solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, ImageHints.none(), wide);
+        assertTrue(result.solved());
+        assertFalse(result.stats().usedHints(), "a region of the options isn't a hint");
+    }
+
+    @Test
     void toleratesSpuriousAndMissingStars() {
         var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 222, -62, 22, 200, true);
         // one star out of four is missing, and there are as many artifacts as stars

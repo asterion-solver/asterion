@@ -66,9 +66,11 @@ Useful options (see `asterion --help` for all of them):
 | `--sip-order`                     | order of the distortion polynomials: 0 to disable, automatic by default      |
 
 When the header of an image tells where the telescope was pointing (`RA`/`DEC`, `OBJCTRA`/`OBJCTDEC`, or a
-previous solution) or its scale (`PIXSCALE`, `SCALE`, `SECPIX`, or `FOCALLEN` and `XPIXSZ`), these hints are
-used for a first attempt, and a blind search follows if it fails: wrong hints can't prevent an image from
-being solved. `--no-blind` skips the blind search, `--no-hints` skips the hints.
+previous solution) or its scale (`PIXSCALE`, `SCALE`, `SECPIX`, or `FOCALLEN` and `XPIXSZ`), these hints order
+the search: first around that position, at any scale, then the whole sky at that scale, then at any scale.
+Wrong hints can't prevent an image from being solved, they only make it slower. `--no-blind` keeps the search
+around the position of the header, `--no-hints` ignores the header. `--ra`, `--dec` and `--radius` are limits
+rather than hints: the region is searched from its center, and never beyond.
 
 In an interactive terminal, long operations (installing catalogs, solving several images) show their
 progress live: the steps which are running stay at the bottom of the terminal while results scroll above
