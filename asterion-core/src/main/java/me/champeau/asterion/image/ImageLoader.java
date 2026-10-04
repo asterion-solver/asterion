@@ -15,21 +15,18 @@
  */
 package me.champeau.asterion.image;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Locale;
-import java.util.stream.IntStream;
 
 /**
- * Reads images of any supported format: FITS files, including compressed ones, and the formats
- * supported by the Java runtime, such as PNG, JPEG and TIFF.
+ * Reads images of any supported format: FITS files, including compressed ones, PNG, JPEG, TIFF and
+ * BMP. Images are decoded by Asterion itself, without AWT, which native executables don't support
+ * on every platform.
  */
 public final class ImageLoader {
-    private static final long AUTO_BINNING_PIXELS = 20_000_000;
-
     private ImageLoader() {
     }
 
@@ -57,58 +54,36 @@ public final class ImageLoader {
     }
 
     private static LoadedImage loadRaster(Path path, int binning) throws IOException {
-        BufferedImage image;
-        try {
-            image = ImageIO.read(path.toFile());
-        } catch (RuntimeException | LinkageError e) {
-            throw new IOException("Unable to decode " + path + ": " + e, e);
+        var data = Files.readAllBytes(path);
+        if (data.length == 0) {
+            throw new IOException("Empty file: " + path);
         }
+        var image = decode(data, binning);
         if (image == null) {
-            throw new IOException("Unsupported image format: " + path);
+            throw new IOException("Unsupported image format: " + path + ", expected FITS, PNG, JPEG, TIFF or BMP");
         }
-        return new LoadedImage(toGray(image, binning), ImageHints.none());
+        return new LoadedImage(image, ImageHints.none());
     }
 
     /**
-     * Converts an image to a single channel, by summing its color channels.
+     * Decodes a PNG, JPEG, TIFF or BMP image.
      *
-     * @param binning the binning factor, or 0 to select it automatically
+     * @return null if the format isn't one of them
      */
-    public static GrayImage toGray(BufferedImage image, int binning) {
-        var width = image.getWidth();
-        var height = image.getHeight();
-        if (binning <= 0) {
-            binning = 1;
-            while ((long) (width / binning) * (height / binning) > AUTO_BINNING_PIXELS) {
-                binning++;
-            }
+    static GrayImage decode(byte[] data, int binning) throws IOException {
+        var header = Arrays.copyOf(data, Math.min(data.length, 16));
+        GrayImage image;
+        if (PngDecoder.accepts(header)) {
+            image = PngDecoder.decode(data, binning);
+        } else if (JpegDecoder.accepts(header)) {
+            image = JpegDecoder.decode(data, binning);
+        } else if (TiffDecoder.accepts(header)) {
+            image = TiffDecoder.decode(data, binning);
+        } else if (BmpDecoder.accepts(header)) {
+            image = BmpDecoder.decode(data, binning);
+        } else {
+            return null;
         }
-        var b = Math.max(1, Math.min(binning, Math.min(width, height) / 16));
-        var w = width / b;
-        var h = height / b;
-        var raster = image.getRaster();
-        var bands = raster.getNumBands();
-        // transparency is not light
-        var colors = image.getColorModel().hasAlpha() ? bands - 1 : bands;
-        var out = new float[w * h];
-        var tasks = Math.clamp(h / 16, 1, 4 * Runtime.getRuntime().availableProcessors());
-        IntStream.range(0, tasks).parallel().forEach(t -> {
-            var from = (int) ((long) h * t / tasks);
-            var to = (int) ((long) h * (t + 1) / tasks);
-            var row = new int[width * bands];
-            for (var y = from; y < to; y++) {
-                for (var sy = 0; sy < b; sy++) {
-                    raster.getPixels(0, y * b + sy, width, 1, row);
-                    for (var x = 0; x < w * b; x++) {
-                        var sum = 0;
-                        for (var c = 0; c < colors; c++) {
-                            sum += row[x * bands + c];
-                        }
-                        out[y * w + x / b] += sum;
-                    }
-                }
-            }
-        });
-        return new GrayImage(w, h, out, b, width, height);
+        return image;
     }
 }

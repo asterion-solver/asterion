@@ -21,8 +21,8 @@ image: solving is *blind* by default, and takes a few milliseconds once stars ar
 
 Download the archive of your platform from the [releases](https://github.com/asterion-solver/asterion/releases):
 Linux (x86-64 or ARM64, such as a Raspberry Pi 4 or 5), macOS (Intel or Apple Silicon) or Windows. Unzip it,
-and add the directory to your `PATH`. The executable needs no Java runtime. Keep the files which come
-with it in the same directory: they are needed to read PNG, JPEG and TIFF images.
+and put the `asterion` executable in a directory of your `PATH`: it's the only file needed, and it needs no Java
+runtime.
 
 On macOS, executables downloaded with a browser are blocked until they are allowed:
 `xattr -d com.apple.quarantine asterion`, in the directory of the executable.
@@ -35,7 +35,8 @@ Download a catalog, once:
 asterion --download-catalog tycho2
 ```
 
-Then solve images, which can be FITS files (including compressed ones), PNG, JPEG, TIFF or BMP:
+Then solve images, which can be FITS files (including compressed ones), PNG, JPEG, TIFF or BMP. Color images are
+solved from the sum of their channels, and color profiles are ignored:
 
 ```
 $ asterion M33.fits
@@ -210,6 +211,9 @@ The solver is also a Java library, which other programs can embed: see [DEVELOPE
 ## License
 
 Apache License, version 2.0.
+
+This software is based in part on the work of the Independent JPEG Group: its JPEG decoder reproduces parts of
+the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md).
 
 This software uses data from the Tycho-2 catalogue (Høg et al., 2000) and from the European Space Agency
 mission Gaia, processed by the Gaia Data Processing and Analysis Consortium.

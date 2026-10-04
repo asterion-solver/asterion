@@ -76,16 +76,33 @@ native executable.
 ./gradlew installDist           # JVM distribution, in asterion-cli/build/install
 ```
 
-The native executable is `asterion-cli/build/native/nativeCompile/asterion`. The shared libraries
-which are next to it are only needed for PNG, JPEG and TIFF files, and must stay in the same directory.
-The executable targets any x86-64 or ARM64 processor by default: `-PnativeMarch=native` optimizes it
-for the build machine.
+The native executable is `asterion-cli/build/native/nativeCompile/asterion`, a single file: images are
+decoded by Asterion itself, not by AWT, which native images don't support on every platform. The
+executable targets any x86-64 or ARM64 processor by default: `-PnativeMarch=native` optimizes it for the
+build machine.
 
 The native executable is built with profile-guided optimization, when the build runs with Oracle GraalVM:
 the profile is `asterion-cli/src/pgo-profiles/main/default.iprof`. It halves the size of the
 executable, and makes it 3% (typical solve) to 10% (index building, exhaustive searches) faster.
 `./update-pgo.sh` regenerates the profile from a workload of your choice, which is worth doing when the
 solver changes significantly.
+
+## Image decoders
+
+PNG, JPEG, TIFF and BMP images are decoded by Asterion, and must give exactly the pixels which ImageIO
+gives: the brightness of a pixel is the sum of its color channels. JPEG images are decoded like the IJG
+library which the JDK uses, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md). Color profiles are
+ignored, unlike ImageIO which applies some of them.
+
+`ImageDecodersTest` checks every variant ImageIO writes, and damaged files. Two more tests take a list of
+image files, one path per line, to check real images:
+
+```
+./gradlew :asterion-core:test --tests '*ImageCorpusTest' -PimageCorpus=images.txt          # same pixels as ImageIO
+./gradlew :asterion-core:test --tests '*ImageDecodersBenchmark' -PimageBenchmark=images.txt # time compared with ImageIO
+```
+
+Their reports are written to `asterion-core/build/reports/image-corpus.txt` and `image-benchmark.txt`.
 
 ## Formatting
 
@@ -121,6 +138,22 @@ The script uses two hidden options of the command line tool:
 
 - `--from-sources` builds indexes from the stars of the catalogs, instead of downloading them already indexed;
 - `--pack-catalogs <directory>` writes the compressed parts of the installed catalogs, and their manifest.
+
+## Testing a build before releasing
+
+The `Build` workflow runs for each push to `main`, each pull request, and on demand. It builds and tests the
+native executable on every platform, and uploads the archives as artifacts of the run, named
+`native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days. Nothing is
+released. To test the Windows archive of the last build of `main`:
+
+```
+gh run download --repo asterion-solver/asterion -n native-windows-x86_64 \
+  $(gh run list --repo asterion-solver/asterion --workflow Build --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
+```
+
+To build a branch without merging it: `gh workflow run Build --repo asterion-solver/asterion --ref <branch>`,
+then download its artifacts the same way. In a browser, the artifacts are at the bottom of the page of the
+run, in the Actions tab: GitHub wraps them in another zip archive.
 
 ## Releasing
 
