@@ -23,8 +23,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch_64
-          - os: macos-15-intel
-            platform: osx-x86_64
           - os: macos-15
             platform: osx-aarch_64
           - os: windows-2025
@@ -34,7 +32,10 @@ jobs:
       - uses: graalvm/setup-graalvm@v1
         with:
           distribution: 'graalvm'
-          java-version: '25'
+          # GraalVM 25.0 replaces the non-ASCII characters of command line arguments with U+FFFD on
+          # Windows (oracle/graal#8593), which breaks paths with accents: innovation releases fix it.
+          # Every platform uses the same release; there is none for macOS on Intel
+          version: '25.4'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           native-image-job-reports: 'true'
       - uses: gradle/actions/setup-gradle@v5
@@ -69,6 +70,12 @@ jobs:
           ./asterion-cli/build/native/nativeCompile/$name --version
           # the ASTAP compatibility mode
           ./asterion-cli/build/native/nativeCompile/$name astap -h
+          # a path with an accent: the .ini file is written next to the image, solved or not
+          dir="$RUNNER_TEMP/Cédric"
+          mkdir -p "$dir"
+          printf 'not an image' > "$dir/image.png"
+          ./asterion-cli/build/native/nativeCompile/$name astap -f "$dir/image.png" || true
+          test -f "$dir/image.ini"
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.platform }}

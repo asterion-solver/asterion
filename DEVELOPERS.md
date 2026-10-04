@@ -66,8 +66,10 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
 
 ## Building
 
-The build requires a Java 25 installation, which Gradle finds as a toolchain, and GraalVM 25 for the
-native executable.
+The build requires a Java 25 installation, which Gradle finds as a toolchain. The native executable is
+built with Oracle GraalVM 25.4, an innovation release, on every platform: GraalVM 25.0 loses the accents
+of command line arguments on Windows. Download it from [graalvm.org](https://www.graalvm.org/downloads/),
+and point `GRAALVM_HOME` to it. There is no GraalVM 25.4 for macOS on Intel, which isn't supported anymore.
 
 ```
 ./gradlew build                 # compiles and tests
@@ -159,7 +161,7 @@ run, in the Actions tab: GitHub wraps them in another zip archive.
 
 Releases are made with the `Release` GitHub workflow, started by hand with the version to release
 (for example `1.0.0`). It builds and tests the native executable on Linux (x86-64 and ARM64), macOS
-(Intel and Apple Silicon) and Windows, then [JReleaser](https://jreleaser.org) tags the current commit
+(Apple Silicon) and Windows, then [JReleaser](https://jreleaser.org) tags the current commit
 and publishes a GitHub release with one zip per platform, their SHA-256 checksums and a changelog
 built from the commit messages (the `conventional-commits` preset groups `feat:`, `fix:`... commits).
 
