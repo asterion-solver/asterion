@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.util.OptionalDouble;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 /**
@@ -44,6 +45,8 @@ import java.util.stream.IntStream;
 public final class FitsImageLoader {
     /** Images larger than this number of pixels are binned by default. */
     private static final long AUTO_BINNING_PIXELS = 20_000_000;
+    /** The patterns of Bayer filters, as FITS headers describe them. */
+    private static final Pattern BAYER_PATTERN = Pattern.compile("[RGB]{4}", Pattern.CASE_INSENSITIVE);
 
     private FitsImageLoader() {
     }
@@ -319,7 +322,14 @@ public final class FitsImageLoader {
                 // not an ISO date, ignore it
             }
         }
-        var bayer = header.containsKey("BAYERPAT") || header.containsKey("COLORTYP");
+        // a raw frame of a color sensor has a single plane, and a Bayer pattern such as RGGB: an RGB
+        // image with 3 planes, which SharpCap describes with COLORTYP = 'RGB', is already debayered
+        var planes = 1;
+        for (var axis = 3; axis <= header.getIntValue("NAXIS", 0); axis++) {
+            planes *= header.getIntValue("NAXIS" + axis, 1);
+        }
+        var bayer = planes == 1
+                && (header.containsKey("BAYERPAT") || BAYER_PATTERN.matcher(header.getStringValue("COLORTYP", "")).matches());
         var hints = ImageHints.builder().bayer(bayer);
         ra.ifPresent(hints::raDeg);
         dec.ifPresent(hints::decDeg);

@@ -95,6 +95,20 @@ class FitsImageLoaderTest {
     }
 
     @Test
+    void doesNotBinDebayeredColorImages() throws Exception {
+        // SharpCap describes RGB images with 3 planes, which are already debayered, with COLORTYP = 'RGB'
+        var file = write("rgb-sharpcap.fits", new short[3][40][60], hdu -> hdu.getHeader().addValue("COLORTYP", "RGB", null));
+        var loaded = FitsImageLoader.load(file);
+        assertFalse(loaded.hints().bayer());
+        assertEquals(1, loaded.image().binning());
+        // a single plane with a Bayer pattern is a raw frame, whatever the keyword
+        var raw = write("raw-sharpcap.fits", new short[40][60], hdu -> hdu.getHeader().addValue("COLORTYP", "RGGB", null));
+        assertTrue(FitsImageLoader.load(raw).hints().bayer());
+        var mono = write("mono.fits", new short[40][60], hdu -> hdu.getHeader().addValue("COLORTYP", "MONO", null));
+        assertFalse(FitsImageLoader.load(mono).hints().bayer());
+    }
+
+    @Test
     void readsFloatCubes() throws Exception {
         var data = new float[3][20][30];
         for (var p = 0; p < 3; p++) {
