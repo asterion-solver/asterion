@@ -181,8 +181,6 @@ public final class Main implements Callable<Integer> {
     private boolean verbose;
 
     public static void main(String[] args) {
-        // images are decoded with the AWT image readers, which must not look for a display
-        System.setProperty("java.awt.headless", "true");
         // nom-tam-fits logs the oddities of FITS files, which are reported as errors when they matter
         Logger.getLogger("nom.tam").setLevel(Level.OFF);
         // the ASTAP compatibility mode, for programs which call ASTAP: when installed as astap, or with "asterion astap"

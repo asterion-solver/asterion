@@ -84,5 +84,9 @@ tasks.register<Zip>("nativeZip") {
             }
         }
         from(rootProject.layout.projectDirectory.files("LICENSE.txt", "README.md"))
+        // the notices of third-party software
+        from(rootProject.layout.projectDirectory.dir("third-party")) {
+            into("third-party")
+        }
     }
 }
