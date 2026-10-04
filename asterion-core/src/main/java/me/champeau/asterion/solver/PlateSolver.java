@@ -41,8 +41,14 @@ import java.util.List;
  */
 public final class PlateSolver {
     private static final double STRICT_CODE_TOLERANCE = 0.004;
-    /** The search radius around the position found in image files, in degrees. */
-    private static final double HINT_SEARCH_RADIUS_DEG = 10;
+    /** The radius of the search around a position which is only a hint, such as one of an image file, in degrees. */
+    public static final double HINT_SEARCH_RADIUS_DEG = 10;
+    /**
+     * The stars which build quads when searching around a position which is only a hint: a right
+     * position solves with the first quads, and a wrong one is given up quickly, before the search
+     * goes on without it. The cost of an unsuccessful search grows with the cube of this number.
+     */
+    public static final int HINT_QUAD_STARS = 30;
     /** The relative error which is tolerated on the scale found in image files. */
     private static final double HINT_SCALE_TOLERANCE = 0.25;
 
@@ -136,6 +142,9 @@ public final class PlateSolver {
                 hinted = true;
             }
             if (hinted) {
+                if (options.blindFallback()) {
+                    b.maxQuadStars(Math.min(options.maxQuadStars(), HINT_QUAD_STARS));
+                }
                 attempts.add(b.build());
             }
         }

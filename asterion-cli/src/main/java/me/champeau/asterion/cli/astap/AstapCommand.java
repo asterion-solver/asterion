@@ -165,11 +165,11 @@ public final class AstapCommand {
         var decDeg = arguments.hasPosition() ? arguments.southPoleDistanceDeg() - 90 : hints.decDeg().orElse(Double.NaN);
         var hasPosition = !Double.isNaN(raDeg) && !Double.isNaN(decDeg);
         var radius = Double.isNaN(arguments.radiusDeg()) ? DEFAULT_RADIUS_DEG : arguments.radiusDeg();
-        if (hasPosition && radius < WHOLE_SKY_DEG) {
-            print("Search radius: " + AstapNumbers.fixed("%.1f", radius) + " degrees");
+        // ASTAP searches a square around the start position: the cone contains it
+        var cone = Math.min(WHOLE_SKY_DEG, radius * Math.sqrt(2));
+        if (hasPosition) {
+            print("Search radius: " + (cone >= WHOLE_SKY_DEG ? "whole sky" : AstapNumbers.fixed("%.1f", radius) + " degrees"));
             print("Start position: " + AstapNumbers.ra(raDeg) + ", " + AstapNumbers.dec(decDeg));
-            // ASTAP searches a square: the cone contains it
-            options.position(raDeg, decDeg, Math.min(WHOLE_SKY_DEG, radius * Math.sqrt(2)));
         } else {
             print("Search radius: whole sky");
         }
@@ -178,17 +178,49 @@ public final class AstapCommand {
                 : Double.isNaN(arguments.fovDeg()) ? hints.pixelScale().orElse(Double.NaN) : Double.NaN;
         if (!Double.isNaN(scale)) {
             print("Image height: " + AstapNumbers.fixed("%.2f", scale * image.sourceHeight() / 3600) + " degrees");
-            options.scale(scale * (1 - SCALE_TOLERANCE), scale * (1 + SCALE_TOLERANCE));
         } else {
             print("Image height: unknown");
         }
         print("Binning: " + image.binning() + "x" + image.binning());
         print("Image dimensions: " + image.sourceWidth() + "x" + image.sourceHeight());
-        var result = solver.solve(image, hints, options.build());
-        print(result.stars().size() + " stars detected in the image.");
-        if (!result.solved() && !Double.isNaN(scale) && result.stars().size() >= MIN_STARS) {
-            print("No solution with the expected scale, trying any scale.");
-            result = solver.solve(result.stars(), image.sourceWidth(), image.sourceHeight(), hints, options.scale(0, 0).build());
+        // Like ASTAP, the search starts around the start position, and widens up to the radius. Around
+        // the start position, the scale is ignored: it doesn't make the search faster, while a wrong
+        // field of view, which some programs pass, would make it fail slowly
+        var attempts = new ArrayList<SolverOptions>();
+        var nearby = hasPosition && cone > PlateSolver.HINT_SEARCH_RADIUS_DEG;
+        if (nearby) {
+            attempts.add(
+                    options.position(raDeg, decDeg, PlateSolver.HINT_SEARCH_RADIUS_DEG).maxQuadStars(PlateSolver.HINT_QUAD_STARS).build());
+            options.maxQuadStars(SolverOptions.defaults().maxQuadStars());
+        }
+        if (hasPosition && cone < WHOLE_SKY_DEG) {
+            options.position(raDeg, decDeg, cone);
+        } else {
+            options.position(Double.NaN, Double.NaN, WHOLE_SKY_DEG);
+        }
+        if (!Double.isNaN(scale)) {
+            attempts.add(options.scale(scale * (1 - SCALE_TOLERANCE), scale * (1 + SCALE_TOLERANCE)).build());
+            options.scale(0, 0);
+        }
+        attempts.add(options.build());
+        SolveResult result = null;
+        for (var attempt : attempts) {
+            if (result == null) {
+                result = solver.solve(image, hints, attempt);
+                print(result.stars().size() + " stars detected in the image.");
+                if (result.stars().size() < MIN_STARS) {
+                    break;
+                }
+            } else {
+                print("No solution yet, searching " + (attempt.hasPosition()
+                        ? "within " + AstapNumbers.fixed("%.1f", attempt.searchRadiusDeg()) + " degrees of the start position"
+                        : "the whole sky")
+                        + (attempt.minScale() > 0 ? " at the expected scale." : " at any scale."));
+                result = solver.solve(result.stars(), image.sourceWidth(), image.sourceHeight(), hints, attempt);
+            }
+            if (result.solved()) {
+                break;
+            }
         }
         var seconds = (System.nanoTime() - start) / 1e9;
         if (!result.solved()) {
