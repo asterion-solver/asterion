@@ -2,7 +2,8 @@ name: Release
 
 # Releases a version: the native executables are built on each platform with that version, then
 # JReleaser tags the current commit, and publishes a GitHub release with the archives, their
-# checksums and a changelog.
+# checksums and a changelog. Finally, the version of gradle.properties becomes the next development
+# version, which is committed and pushed.
 on:
   workflow_dispatch:
     inputs:
@@ -65,6 +66,35 @@ jobs:
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew jreleaserFullRelease -Pversion=${{ inputs.version }}
+      - name: Prepare the next development version
+        env:
+          VERSION: ${{ inputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          current=$(grep '^version=' gradle.properties | cut -d= -f2)
+          if [[ "$VERSION" == *-* ]]; then
+            # a pre-release, such as 1.0.0-rc.1: the final version comes next
+            next="${VERSION%%-*}-SNAPSHOT"
+          else
+            IFS=. read -r major minor patch <<< "$VERSION"
+            next="$major.$minor.$((patch + 1))-SNAPSHOT"
+          fi
+          # a higher version which was set by hand for the next release, such as 0.2.0-SNAPSHOT, is kept
+          if [ "$(printf '%s\n' "$VERSION" "${current%-SNAPSHOT}" | sort -V | tail -1)" != "$VERSION" ]; then
+            next=$current
+          fi
+          if [ "$next" = "$current" ]; then
+            echo "The development version stays $current"
+            exit 0
+          fi
+          sed -i "s/^version=.*/version=$next/" gradle.properties
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # a release thing: [skip ci], and pushes made with GITHUB_TOKEN never start workflows anyway
+          git commit -am "chore(release): prepare $next [skip ci]"
+          # commits may have been pushed while the release was built
+          git pull --rebase origin "$BRANCH"
+          git push origin "HEAD:$BRANCH"
       - name: JReleaser output
         if: always()
         uses: actions/upload-artifact@v4

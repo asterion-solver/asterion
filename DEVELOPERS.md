@@ -130,8 +130,11 @@ Releases are made with the `Release` GitHub workflow, started by hand with the v
 and publishes a GitHub release with one zip per platform, their SHA-256 checksums and a changelog
 built from the commit messages (the `conventional-commits` preset groups `feat:`, `fix:`... commits).
 
-The version of `gradle.properties` stays a snapshot: the released version is given to the build with
-`-Pversion`. The name of the executable and of the archives is the `executableName` property of
+The version of `gradle.properties` is always a snapshot: the released version is given to the build with
+`-Pversion`. Once the release is published, the workflow sets it to the next development version and
+pushes that commit, as `github-actions[bot]`: `0.1.1-SNAPSHOT` after `0.1.0`, `1.0.0-SNAPSHOT` after
+`1.0.0-rc.1`. A higher version which was set by hand, when the next release adds features for example,
+is kept. The name of the executable and of the archives is the `executableName` property of
 `gradle.properties`.
 
 To check the release configuration locally, put archives named like the ones of the workflow in an
