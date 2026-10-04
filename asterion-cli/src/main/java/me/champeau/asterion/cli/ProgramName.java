@@ -48,8 +48,13 @@ public final class ProgramName {
     /** Only loaded in native images, where the GraalVM API is available. */
     private static final class NativeImage {
         static String argumentZero() {
-            // argv[0], unlike the path of the executable, is the name of a symbolic link
-            return ProcessProperties.getArgumentVectorProgramName();
+            try {
+                // argv[0], unlike the path of the executable, is the name of a symbolic link
+                return ProcessProperties.getArgumentVectorProgramName();
+            } catch (UnsupportedOperationException _) {
+                // Windows: the executable is copied rather than linked under another name
+                return ProcessProperties.getExecutableName();
+            }
         }
     }
 }
