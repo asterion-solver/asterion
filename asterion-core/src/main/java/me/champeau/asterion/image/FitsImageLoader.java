@@ -284,17 +284,22 @@ public final class FitsImageLoader {
 
     /** Extracts solving hints from a FITS header. */
     public static ImageHints hints(Header header) {
-        var ra = angle(header, "RA", false);
-        if (ra.isEmpty()) {
-            ra = angle(header, "OBJCTRA", true);
-        }
-        var dec = angle(header, "DEC", false);
-        if (dec.isEmpty()) {
-            dec = angle(header, "OBJCTDEC", false);
-        }
-        if ((ra.isEmpty() || dec.isEmpty()) && header.containsKey("CRVAL1") && header.containsKey("CRVAL2")) {
+        OptionalDouble ra;
+        OptionalDouble dec;
+        // a previous solution is more reliable than the position of the mount, which may be a
+        // placeholder: SharpCap writes RA and DEC even when no mount is connected
+        if (header.getStringValue("CTYPE1", "").startsWith("RA") && header.containsKey("CRVAL1") && header.containsKey("CRVAL2")) {
             ra = OptionalDouble.of(header.getDoubleValue("CRVAL1"));
             dec = OptionalDouble.of(header.getDoubleValue("CRVAL2"));
+        } else {
+            ra = angle(header, "RA", false);
+            if (ra.isEmpty()) {
+                ra = angle(header, "OBJCTRA", true);
+            }
+            dec = angle(header, "DEC", false);
+            if (dec.isEmpty()) {
+                dec = angle(header, "OBJCTDEC", false);
+            }
         }
         // the size of the pixels of the file, which includes binning
         var pixelSize = header.getDoubleValue("XPIXSZ", header.getDoubleValue("PIXSIZE1", 0));

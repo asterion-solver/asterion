@@ -149,5 +149,18 @@ class FitsImageLoaderTest {
         hints = FitsImageLoader.load(sexagesimal).hints();
         assertEquals(344.475, hints.raDeg().orElseThrow(), 1e-6);
         assertEquals(-62.518333, hints.decDeg().orElseThrow(), 1e-6);
+
+        // a previous solution wins over the position of the mount, like in SharpCap files without a mount
+        var solved = write("solved.fits", new short[20][20], hdu -> {
+            hdu.getHeader().addValue("RA", 75.0, null);
+            hdu.getHeader().addValue("DEC", -5.0, null);
+            hdu.getHeader().addValue("CTYPE1", "RA---TAN", null);
+            hdu.getHeader().addValue("CTYPE2", "DEC--TAN", null);
+            hdu.getHeader().addValue("CRVAL1", 83.8358, null);
+            hdu.getHeader().addValue("CRVAL2", -5.3092, null);
+        });
+        hints = FitsImageLoader.load(solved).hints();
+        assertEquals(83.8358, hints.raDeg().orElseThrow(), 1e-9);
+        assertEquals(-5.3092, hints.decDeg().orElseThrow(), 1e-9);
     }
 }
