@@ -20,7 +20,7 @@ image: solving is *blind* by default, and takes a few milliseconds once stars ar
 ## Installation
 
 Download the archive of your platform from the [releases](https://github.com/asterion-solver/asterion/releases):
-Linux (x86-64 or ARM64, such as a Raspberry Pi 4 or 5), macOS (Intel or Apple Silicon) or Windows. Unzip it,
+Linux (x86-64 or ARM64, such as a Raspberry Pi 4 or 5), macOS (Apple Silicon) or Windows. Unzip it,
 and put the `asterion` executable in a directory of your `PATH`: it's the only file needed, and it needs no Java
 runtime.
 

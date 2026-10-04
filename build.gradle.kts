@@ -13,7 +13,7 @@ val displayName = providers.gradleProperty("displayName").get()
 // The platforms for which native executables are released. The archives are built by the
 // `nativeZip` task on each platform, and gathered in the `artifacts` directory by the release
 // workflow before JReleaser runs.
-val platforms = listOf("linux-x86_64", "linux-aarch_64", "osx-x86_64", "osx-aarch_64", "windows-x86_64")
+val platforms = listOf("linux-x86_64", "linux-aarch_64", "osx-aarch_64", "windows-x86_64")
 
 jreleaser {
     project {

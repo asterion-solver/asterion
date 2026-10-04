@@ -54,7 +54,8 @@ jobs:
       - uses: graalvm/setup-graalvm@v1
         with:
           distribution: 'graalvm'
-          java-version: '25'
+          # the release of the native executables, see native.yml
+          version: '25.4'
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: gradle/actions/setup-gradle@v5
       - uses: actions/download-artifact@v4
