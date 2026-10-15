@@ -15,3 +15,4 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include("asterion-core")
 include("asterion-cli")
+include("asterion-web")
