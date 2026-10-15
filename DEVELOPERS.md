@@ -77,7 +77,7 @@ and point `GRAALVM_HOME` to it. There is no GraalVM 25.4 for macOS on Intel, whi
 ```
 ./gradlew build                 # compiles and tests
 ./gradlew nativeCompile         # builds the native executable, requires GraalVM 25
-./gradlew nativeZip             # packages it for the current platform
+./gradlew nativeZip             # packages it for the current platform, with the web interface
 ./gradlew installDist           # JVM distribution, in asterion-cli/build/install
 ```
 
@@ -166,7 +166,9 @@ Releases are made with the `Release` GitHub workflow, started by hand with the v
 (for example `1.0.0`). It builds and tests the native executable on Linux (x86-64 and ARM64), macOS
 (Apple Silicon) and Windows, then [JReleaser](https://jreleaser.org) tags the current commit
 and publishes a GitHub release with one zip per platform, their SHA-256 checksums and a changelog
-built from the commit messages (the `conventional-commits` preset groups `feat:`, `fix:`... commits).
+built from the commit messages (the `conventional-commits` preset groups `feat:`, `fix:`... commits). Each zip
+contains both executables: `asterion-web` is bundled in the archive of `asterion-cli` by its
+`bundledExecutables` dependencies.
 
 The version of `gradle.properties` is always a snapshot: the released version is given to the build with
 `-Pversion`. Once the release is published, the workflow sets it to the next development version and

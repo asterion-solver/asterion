@@ -22,10 +22,10 @@ image: solving is *blind* by default, and takes a few milliseconds once stars ar
 Download the archive of your platform from the [releases](https://github.com/asterion-solver/asterion/releases):
 Linux (x86-64 or ARM64, such as a Raspberry Pi 4 or 5), macOS (Apple Silicon) or Windows. Unzip it,
 and put the `asterion` executable in a directory of your `PATH`: it's the only file needed, and it needs no Java
-runtime.
+runtime. The archive also contains `asterion-web`, the [web interface](#web-interface), which works the same way.
 
 On macOS, executables downloaded with a browser are blocked until they are allowed:
-`xattr -d com.apple.quarantine asterion`, in the directory of the executable.
+`xattr -d com.apple.quarantine asterion asterion-web`, in the directory of the executables.
 
 ## Quick start
 
@@ -167,7 +167,8 @@ written from the manual, the outputs of `astap_cli` and the source of N.I.N.A. a
 
 ## Web interface
 
-`asterion-web` is a web interface to the solver, in its own native executable. It solves the images
+`asterion-web` is a web interface to the solver, in its own native executable, which is in the archive of
+the releases next to `asterion`. It solves the images
 which are uploaded to it, with the options of the command line tool, and lists and installs catalogs:
 
 ```

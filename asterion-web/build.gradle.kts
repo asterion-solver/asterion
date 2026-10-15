@@ -25,3 +25,8 @@ graalvmNative {
         imageName = "asterion-web"
     }
 }
+
+tasks.named("nativeZip") {
+    // the web interface is distributed in the archive of the command line tool
+    enabled = false
+}

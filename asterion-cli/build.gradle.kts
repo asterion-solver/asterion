@@ -18,6 +18,8 @@ dependencies {
         runtimeOnly(libs.tamboui.panama.backend)
     }
     annotationProcessor(libs.picocli.codegen)
+    // the archive of the command line tool contains the web interface too
+    bundledExecutables(projects.asterionWeb)
 }
 
 tasks.compileJava {

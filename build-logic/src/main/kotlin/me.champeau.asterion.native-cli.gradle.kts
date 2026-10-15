@@ -65,8 +65,34 @@ val platform = providers.systemProperty("os.name").zip(providers.systemProperty(
     "$os-$cpu"
 }
 
+// The native executable of this module and the notices of its third-party data, which the archive
+// of another module can bundle: see the `bundledExecutables` configuration
+val nativeBundleCategory = objects.named<Category>("native-bundle")
+val nativeBundle = tasks.register<Sync>("nativeBundle") {
+    description = "Gathers the native executable and the notices of this module, for the archive of another one"
+    from(tasks.named<BuildNativeImageTask>("nativeCompile").flatMap { it.outputDirectory }) {
+        // left there by nativeCompile --pgo-instrument
+        exclude("*-instrumented*")
+    }
+    from(layout.projectDirectory.dir("third-party")) {
+        into("third-party")
+    }
+    into(layout.buildDirectory.dir("native-bundle"))
+}
+configurations.consumable("nativeBundleElements") {
+    attributes.attribute(Category.CATEGORY_ATTRIBUTE, nativeBundleCategory)
+    outgoing.artifact(nativeBundle)
+}
+
+// The executables of other modules which the archive of this one contains
+val bundledExecutables = configurations.dependencyScope("bundledExecutables")
+val bundledExecutablesPath = configurations.resolvable("bundledExecutablesPath") {
+    extendsFrom(bundledExecutables.get())
+    attributes.attribute(Category.CATEGORY_ATTRIBUTE, nativeBundleCategory)
+}
+
 tasks.register<Zip>("nativeZip") {
-    description = "Packages the native executable for the current platform"
+    description = "Packages the native executable for the current platform, with the bundled ones"
     group = "distribution"
     val version = project.version.toString()
     // the name of the native image of this module, which the configuration cache can serialize
@@ -80,6 +106,16 @@ tasks.register<Zip>("nativeZip") {
             exclude("*-instrumented*")
             eachFile {
                 if (name == executable.get() || name == executable.get() + ".exe") {
+                    permissions {
+                        unix("rwxr-xr-x")
+                    }
+                }
+            }
+        }
+        // the executables of other modules, next to this one, and the notices of their data
+        from(bundledExecutablesPath) {
+            eachFile {
+                if (!sourcePath.startsWith("third-party/")) {
                     permissions {
                         unix("rwxr-xr-x")
                     }
