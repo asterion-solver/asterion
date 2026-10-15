@@ -1,0 +1,386 @@
+/*
+ * Copyright 2026 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package me.champeau.asterion.web;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+import me.champeau.asterion.catalog.Catalogs;
+import me.champeau.asterion.image.ImageLoader;
+import me.champeau.asterion.solver.SolutionFiles;
+import me.champeau.asterion.solver.SolveResult;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * A web interface to the solver, with the HTTP server of the JDK: it lists and installs catalogs,
+ * and solves the images which are uploaded.
+ */
+public final class WebServer implements AutoCloseable {
+    /** The largest image which can be uploaded. */
+    private static final long MAX_UPLOAD_BYTES = 2L << 30;
+    /** The largest radius of charts: they show the stars of a catalog around a solution. */
+    private static final double MAX_CHART_RADIUS_DEG = 30;
+    private static final Map<String, String> STATIC_FILES = Map.of(
+            "/", "index.html",
+            "/index.html", "index.html",
+            "/app.js", "app.js",
+            "/charts.js", "charts.js",
+            "/style.css", "style.css",
+            "/sky.json", "sky.json");
+
+    /** Solved images are kept for downloads: the last ones, for an hour, within a limit of disk space. */
+    private static final int KEPT_IMAGES = 10;
+    private static final long KEPT_BYTES = 4L << 30;
+    private static final Duration KEPT_FOR = Duration.ofHours(1);
+
+    private final HttpServer server;
+    private final CatalogService catalogs;
+    private final SolvedImages solved;
+
+    private WebServer(HttpServer server, CatalogService catalogs, SolvedImages solved) {
+        this.server = server;
+        this.catalogs = catalogs;
+        this.solved = solved;
+    }
+
+    /**
+     * Starts a server.
+     *
+     * @param port the port, or 0 for any free port
+     */
+    public static WebServer start(String host, int port, Path catalogDirectory) throws IOException {
+        var server = HttpServer.create(new InetSocketAddress(host, port), 0);
+        var web = new WebServer(server, new CatalogService(catalogDirectory),
+                new SolvedImages(KEPT_IMAGES, KEPT_BYTES, KEPT_FOR, Clock.systemUTC()));
+        server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        server.createContext("/api/catalogs", web.handler(web::catalogs));
+        server.createContext("/api/install", web.handler(web::install));
+        server.createContext("/api/solve", web.handler(web::solve));
+        server.createContext("/api/stars", web.handler(web::stars));
+        server.createContext("/api/download", web.handler(web::download));
+        server.createContext("/", web.handler(WebServer::staticFile));
+        server.start();
+        return web;
+    }
+
+    /** The address of the interface, which uses "localhost" when the server listens on all addresses. */
+    public URI uri() {
+        var address = server.getAddress();
+        var host = address.getAddress().isAnyLocalAddress() ? "localhost" : address.getHostString();
+        return URI.create("http://" + (host.contains(":") ? "[" + host + "]" : host) + ":" + address.getPort() + "/");
+    }
+
+    @Override
+    public void close() {
+        server.stop(0);
+        try {
+            solved.close();
+        } catch (IOException e) {
+            // temporary files: the system cleans them eventually
+        }
+    }
+
+    @FunctionalInterface
+    private interface Route {
+        void handle(HttpExchange exchange) throws IOException;
+    }
+
+    /** Turns failures into JSON errors: invalid requests are 400, conflicts 409, and the rest 500. */
+    private HttpHandler handler(Route route) {
+        return exchange -> {
+            try (exchange) {
+                try {
+                    route.handle(exchange);
+                } catch (IllegalArgumentException e) {
+                    error(exchange, 400, e.getMessage());
+                } catch (NoSuchElementException e) {
+                    error(exchange, 404, e.getMessage());
+                } catch (IllegalStateException e) {
+                    error(exchange, 409, e.getMessage());
+                } catch (IOException | RuntimeException e) {
+                    error(exchange, 500, e.getMessage() == null ? e.toString() : e.getMessage());
+                }
+            }
+        };
+    }
+
+    private static void expect(HttpExchange exchange, String method) {
+        if (!exchange.getRequestMethod().equals(method)) {
+            throw new IllegalArgumentException("Use " + method + " for " + exchange.getRequestURI().getPath());
+        }
+    }
+
+    private void catalogs(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        send(exchange, 200, catalogs.describe().field("version", version()));
+    }
+
+    private void install(HttpExchange exchange) throws IOException {
+        expect(exchange, "POST");
+        var name = SolveRequest.parse(exchange.getRequestURI().getRawQuery()).fileName();
+        catalogs.install(name);
+        send(exchange, 202, catalogs.describe().field("version", version()));
+    }
+
+    private void solve(HttpExchange exchange) throws IOException {
+        expect(exchange, "POST");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var options = request.options();
+        var solver = catalogs.solver();
+        if (solver == null) {
+            throw new IllegalStateException("No catalog is installed in " + catalogs.directory() + ": install one first");
+        }
+        // images are read from files: the name keeps the extension, which tells compressed FITS files
+        var file = Files.createTempFile("asterion-", "-" + request.fileName());
+        try {
+            copy(exchange.getRequestBody(), file);
+            SolveResult result;
+            try {
+                result = solver.solve(file, options);
+            } catch (IOException e) {
+                // an image which can't be read: the message names the upload, not the temporary file
+                throw new IllegalArgumentException(String.valueOf(e.getMessage()).replace(file.toString(), request.fileName()), e);
+            }
+            var json = SolveRequest.describe(request.fileName(), result);
+            if (result.solution().isPresent()) {
+                // kept for downloads
+                var fits = ImageLoader.isFits(file);
+                var id = solved.keep(file, request.fileName(), result.solution().orElseThrow());
+                json.field("download", Json.object().field("id", id).field("fits", fits));
+            }
+            send(exchange, 200, json);
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    /** The brightest stars of a catalog around a position, for charts. */
+    private void stars(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var ra = request.number("ra", Double.NaN);
+        var dec = request.number("dec", Double.NaN);
+        var radius = request.number("radius", Double.NaN);
+        if (Double.isNaN(ra) || Double.isNaN(dec) || Math.abs(dec) > 90 || !(radius > 0 && radius <= MAX_CHART_RADIUS_DEG)) {
+            throw new IllegalArgumentException("ra, dec and radius (up to " + MAX_CHART_RADIUS_DEG + "°) are required");
+        }
+        var count = (int) Math.clamp(request.number("count", 2000), 1, 20000);
+        send(exchange, 200, catalogs.stars(request.parameter("catalog"), ra, dec, radius, count));
+    }
+
+    /**
+     * Downloads a solved image: the image with its solution in its header (FITS images only), the
+     * solution as a FITS header (a .wcs file), or the matched stars as CSV.
+     */
+    private void download(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var image = solved.get(request.parameter("id"));
+        // image.fits.gz gives image.solved.fits, image.wcs and image.matches.csv
+        var base = image.name().replaceAll("(?i)\\.(gz|fz|z|bz2)$", "").replaceAll("\\.[^.]*$", "");
+        var format = String.valueOf(request.parameter("format"));
+        switch (format) {
+            case "fits" -> {
+                var copy = solved.createTempFile(".fits");
+                try {
+                    try {
+                        SolutionFiles.writeCopy(image.file(), image.solution(), copy);
+                    } catch (IOException e) {
+                        throw new IllegalArgumentException(String.valueOf(e.getMessage()).replace(image.file().toString(), image.name()),
+                                e);
+                    }
+                    attachment(exchange, base + ".solved.fits", "application/fits", Files.size(copy));
+                    Files.copy(copy, exchange.getResponseBody());
+                } finally {
+                    Files.deleteIfExists(copy);
+                }
+            }
+            case "wcs" -> {
+                var content = SolutionFiles.wcsHeader(image.solution()).getBytes(StandardCharsets.US_ASCII);
+                attachment(exchange, base + ".wcs", "application/fits", content.length);
+                exchange.getResponseBody().write(content);
+            }
+            case "csv" -> {
+                var content = SolutionFiles.matchesCsv(image.solution()).getBytes(StandardCharsets.US_ASCII);
+                attachment(exchange, base + ".matches.csv", "text/csv; charset=us-ascii", content.length);
+                exchange.getResponseBody().write(content);
+            }
+            default -> throw new IllegalArgumentException("Unknown format " + format + ": use fits, wcs or csv");
+        }
+    }
+
+    private static void attachment(HttpExchange exchange, String name, String type, long length) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", type);
+        // names of uploads only have letters, digits, dots, dashes and underscores
+        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + name + "\"");
+        exchange.sendResponseHeaders(200, length);
+    }
+
+    private static void copy(InputStream in, Path file) throws IOException {
+        try (var limited = new LimitedInputStream(in, MAX_UPLOAD_BYTES)) {
+            Files.copy(limited, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+        if (Files.size(file) == 0) {
+            throw new IllegalArgumentException("No image was sent");
+        }
+    }
+
+    private static void staticFile(HttpExchange exchange) throws IOException {
+        var file = STATIC_FILES.get(exchange.getRequestURI().getPath());
+        if (file == null) {
+            error(exchange, 404, "Not found: " + exchange.getRequestURI().getPath());
+            return;
+        }
+        expect(exchange, "GET");
+        byte[] content;
+        try (var in = WebServer.class.getResourceAsStream("/web/" + file)) {
+            if (in == null) {
+                throw new IOException("Missing resource " + file);
+            }
+            content = in.readAllBytes();
+        }
+        var type = file.endsWith(".html") ? "text/html"
+                : file.endsWith(".js") ? "text/javascript"
+                        : file.endsWith(".json") ? "application/json" : "text/css";
+        exchange.getResponseHeaders().set("Content-Type", type + "; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, content.length);
+        exchange.getResponseBody().write(content);
+    }
+
+    private static void error(HttpExchange exchange, int status, String message) throws IOException {
+        // the rest of an upload is read: a client which is still sending wouldn't get the answer
+        try (var body = new LimitedInputStream(exchange.getRequestBody(), MAX_UPLOAD_BYTES)) {
+            body.transferTo(OutputStream.nullOutputStream());
+        } catch (IOException | IllegalArgumentException _) {
+            // the connection is closed anyway
+        }
+        send(exchange, status, Json.object().field("error", message));
+    }
+
+    private static void send(HttpExchange exchange, int status, Json json) throws IOException {
+        var content = json.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, content.length);
+        exchange.getResponseBody().write(content);
+    }
+
+    /** Fails when more bytes than allowed are read, so that uploads can't fill the disk. */
+    private static final class LimitedInputStream extends java.io.FilterInputStream {
+        private long remaining;
+
+        LimitedInputStream(InputStream in, long limit) {
+            super(in);
+            this.remaining = limit;
+        }
+
+        @Override
+        public int read() throws IOException {
+            var b = super.read();
+            if (b >= 0 && --remaining < 0) {
+                throw new IllegalArgumentException("The image is larger than " + (MAX_UPLOAD_BYTES >> 20) + " MB");
+            }
+            return b;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            var n = super.read(buffer, offset, length);
+            if (n > 0 && (remaining -= n) < 0) {
+                throw new IllegalArgumentException("The image is larger than " + (MAX_UPLOAD_BYTES >> 20) + " MB");
+            }
+            return n;
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+        // nom-tam-fits logs the oddities of FITS files, which are reported as errors when they matter
+        Logger.getLogger("nom.tam").setLevel(Level.OFF);
+        var host = "127.0.0.1";
+        var port = 8080;
+        var directory = Catalogs.defaultDirectory();
+        for (var i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--host" -> host = value(args, ++i);
+                case "--port" -> port = Integer.parseInt(value(args, ++i));
+                case "--catalog-dir" -> directory = Path.of(value(args, ++i));
+                case "-V", "--version" -> {
+                    System.out.println("Asterion Solver " + version() + ", web interface");
+                    return;
+                }
+                case "-h", "--help" -> {
+                    usage();
+                    return;
+                }
+                default -> {
+                    System.err.println("Unknown option " + args[i]);
+                    usage();
+                    System.exit(2);
+                }
+            }
+        }
+        var web = start(host, port, directory);
+        Runtime.getRuntime().addShutdownHook(new Thread(web::close));
+        System.out.println("Asterion Solver " + version() + ", web interface: " + web.uri());
+        System.out.println("Catalogs: " + directory.toAbsolutePath());
+        if (!host.equals("127.0.0.1") && !host.equals("localhost") && !host.equals("::1")) {
+            System.out.println("Warning: the interface is reachable from other machines, and has no access control");
+        }
+        System.out.println("Press Ctrl+C to stop");
+    }
+
+    private static String value(String[] args, int index) {
+        if (index >= args.length) {
+            System.err.println("Missing value for " + args[index - 1]);
+            System.exit(2);
+        }
+        return args[index];
+    }
+
+    private static void usage() {
+        System.out.println("""
+                Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>]
+                  --host <address>         the address to listen on (default: 127.0.0.1, this machine only)
+                  --port <port>            the port to listen on (default: 8080, 0 for any free port)
+                  --catalog-dir <dir>      the directory of the catalogs (default: $ASTERION_CATALOGS, or ~/.asterion/catalogs)
+                  -V, --version            prints the version
+                  -h, --help               prints this help""");
+    }
+
+    private static String version() {
+        try (var in = WebServer.class.getResourceAsStream("/asterion-version.txt")) {
+            return in == null ? "(development)" : new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            return "(development)";
+        }
+    }
+}

@@ -76,6 +76,25 @@ jobs:
           printf 'not an image' > "$dir/image.png"
           ./asterion-cli/build/native/nativeCompile/$name astap -f "$dir/image.png" || true
           test -f "$dir/image.ini"
+          # the web interface: it prints its address, and serves the page and the API
+          web=./asterion-web/build/native/nativeCompile/asterion-web
+          $web --version
+          $web --port 0 > "$RUNNER_TEMP/web.out" 2>&1 &
+          pid=$!
+          url=
+          for _ in $(seq 1 50); do
+            url=$(grep -o 'http://[^ ]*' "$RUNNER_TEMP/web.out" | head -1 || true)
+            [ -n "$url" ] && break
+            sleep 0.2
+          done
+          # downloaded before being checked: grep -q stops reading at the first match, which fails curl
+          curl -sf "$url" -o "$RUNNER_TEMP/page.html"
+          grep -q '<title>Asterion Solver</title>' "$RUNNER_TEMP/page.html"
+          curl -sf "${url}api/catalogs" -o "$RUNNER_TEMP/catalogs.json"
+          grep -q '"available"' "$RUNNER_TEMP/catalogs.json"
+          curl -sf "${url}sky.json" -o "$RUNNER_TEMP/sky.json"
+          grep -q '"Ori":"Orion"' "$RUNNER_TEMP/sky.json"
+          kill $pid
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.platform }}

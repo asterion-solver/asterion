@@ -165,6 +165,42 @@ written from the manual, the outputs of `astap_cli` and the source of N.I.N.A. a
 - Each command line received is logged in `~/.asterion/astap-calls.log`, to help with programs which
   don't behave as expected.
 
+## Web interface
+
+`asterion-web` is a web interface to the solver, in its own native executable. It solves the images
+which are uploaded to it, with the options of the command line tool, and lists and installs catalogs:
+
+```
+$ asterion-web
+Asterion Solver 0.2.0, web interface: http://127.0.0.1:8080/
+Catalogs: /home/user/.asterion/catalogs
+Press Ctrl+C to stop
+```
+
+Open the address in a browser. `--port` changes the port (0 for any free one), `--catalog-dir` the directory
+of the catalogs. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
+the network, without any access control.
+
+A solution comes with two charts, north up and east left: where the image is among the constellations, with
+the name of its constellation, and the stars of the catalog around it, the ones which were matched being
+circled. The constellation lines are those of [Marc van der Sluys](https://github.com/MarcvdSluys/ConstellationLines)
+(CC BY 4.0), see [the credits of the sky data](asterion-web/third-party/sky-data.md).
+
+A solution can be downloaded as a FITS image with the solution in its header (for FITS images; compressed
+ones are written uncompressed), as a FITS header alone (a `.wcs` file, like those of astrometry.net and of
+`asterion --wcs`), as the list of matched stars (CSV) or as JSON. To make this possible, the server keeps
+the last 10 solved images for an hour, within 4 GB, in a temporary directory which it deletes when it stops.
+
+Its API is what the page uses:
+
+| Request | Answer |
+|---|---|
+| `GET /api/catalogs` | the catalogs which are installed and available, and the installations in progress |
+| `POST /api/install?name=gaia-500` | starts installing a catalog |
+| `POST /api/solve?name=image.fits&ra=…&dec=…&radius=…&fov=…` | solves the image sent as the body of the request, with the JSON output of `asterion --json`, its constellation, its outline on the sky and the positions of the matched stars |
+| `GET /api/download?id=…&format=fits` | a solved image, by the `download.id` of its solution: `fits` for the image with its solution, `wcs` for the header alone, `csv` for the matched stars |
+| `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
+
 ## How it works
 
 1. **Star extraction**. The background of the image and its noise are estimated, then stars are detected

@@ -6,6 +6,7 @@ plugins {
     id("org.graalvm.buildtools.native")
 }
 
+// the name of the executable of the command line tool: other modules set their own
 val executableName = providers.gradleProperty("executableName").get()
 
 application {
@@ -68,24 +69,29 @@ tasks.register<Zip>("nativeZip") {
     description = "Packages the native executable for the current platform"
     group = "distribution"
     val version = project.version.toString()
-    // a local copy, which the configuration cache can serialize
-    val executable = executableName
-    val distributionName = platform.map { "$executable-$version-$it" }
+    // the name of the native image of this module, which the configuration cache can serialize
+    val executable = graalvmNative.binaries.named("main").flatMap { it.imageName }
+    val distributionName = executable.zip(platform) { name, os -> "$name-$version-$os" }
     archiveFileName = distributionName.map { "$it.zip" }
     destinationDirectory = layout.buildDirectory.dir("distributions")
     into(distributionName) {
         from(tasks.named<BuildNativeImageTask>("nativeCompile").flatMap { it.outputDirectory }) {
             // left there by nativeCompile --pgo-instrument
             exclude("*-instrumented*")
-            filesMatching(listOf(executable, "$executable.exe")) {
-                permissions {
-                    unix("rwxr-xr-x")
+            eachFile {
+                if (name == executable.get() || name == executable.get() + ".exe") {
+                    permissions {
+                        unix("rwxr-xr-x")
+                    }
                 }
             }
         }
         from(rootProject.layout.projectDirectory.files("LICENSE.txt", "README.md"))
-        // the notices of third-party software
+        // the notices of third-party software, of the project and of this module
         from(rootProject.layout.projectDirectory.dir("third-party")) {
+            into("third-party")
+        }
+        from(layout.projectDirectory.dir("third-party")) {
             into("third-party")
         }
     }

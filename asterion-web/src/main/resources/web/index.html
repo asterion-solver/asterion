@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Asterion Solver</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <h1>Asterion Solver</h1>
+    <span id="version" class="muted"></span>
+</header>
+<main>
+    <section class="card" id="solve">
+        <h2>Solve an image</h2>
+        <form id="solve-form">
+            <label class="drop" id="drop">
+                <input type="file" id="file" required>
+                <span id="drop-text">Drop a FITS, PNG, JPEG, TIFF or BMP image here, or click to choose one</span>
+            </label>
+            <fieldset>
+                <legend>Position <span class="muted">optional, a limit of the search</span></legend>
+                <label>Right ascension (°) <input name="ra" type="number" step="any" min="0" max="360"></label>
+                <label>Declination (°) <input name="dec" type="number" step="any" min="-90" max="90"></label>
+                <label>Radius (°) <input name="radius" type="number" step="any" min="0" value="10"></label>
+            </fieldset>
+            <fieldset>
+                <legend>Scale <span class="muted">optional</span></legend>
+                <label>Field width (°) <input name="fov" type="number" step="any" min="0" title="30% error tolerated"></label>
+                <label>Scale min (″/px) <input name="scaleLow" type="number" step="any" min="0"></label>
+                <label>Scale max (″/px) <input name="scaleHigh" type="number" step="any" min="0"></label>
+            </fieldset>
+            <details>
+                <summary>More options</summary>
+                <fieldset>
+                    <label>SIP order
+                        <select name="sipOrder">
+                            <option value="-1">automatic</option>
+                            <option value="0">none</option>
+                            <option>2</option><option>3</option><option>4</option><option>5</option>
+                        </select>
+                    </label>
+                    <label>Parity
+                        <select name="parity">
+                            <option value="both">both</option>
+                            <option value="normal">normal</option>
+                            <option value="flipped">flipped</option>
+                        </select>
+                    </label>
+                    <label>Binning <input name="binning" type="number" min="0" value="0" title="0: automatic"></label>
+                    <label>Timeout (s) <input name="timeout" type="number" step="any" min="1" value="30"></label>
+                    <label class="check"><input name="hints" type="checkbox" checked> Use the hints of the image header</label>
+                    <label class="check"><input name="blind" type="checkbox" checked> Search the whole sky if needed</label>
+                </fieldset>
+            </details>
+            <button type="submit" id="solve-button">Solve</button>
+        </form>
+        <div id="result" hidden></div>
+    </section>
+
+    <section class="card" id="catalogs">
+        <h2>Catalogs</h2>
+        <p class="muted">Installed in <code id="directory"></code></p>
+        <table>
+            <thead><tr><th>Catalog</th><th>Description</th><th>Status</th><th></th></tr></thead>
+            <tbody id="catalog-rows"></tbody>
+        </table>
+        <form id="custom-form" class="inline">
+            <label>Gaia DR3, by density
+                <input id="custom-name" list="gaia-variants" value="gaia-500" pattern="gaia-[0-9]{2,5}" required
+                       title="gaia-N: the N brightest stars of each square degree, from 10 to 10000">
+            </label>
+            <datalist id="gaia-variants"></datalist>
+            <button type="submit">Install</button>
+        </form>
+        <p class="muted">Published densities download already indexed; other ones are built from the Gaia servers, which takes longer
+            and needs memory.</p>
+        <div id="installations"></div>
+    </section>
+</main>
+<footer class="muted">
+    Charts: constellation lines by <a href="https://github.com/MarcvdSluys/ConstellationLines">Marc van der Sluys</a>
+    (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>), boundaries from Davenhall &amp; Leggett (1989),
+    stars from the Yale Bright Star Catalogue, retrieved from the <a href="https://cds.unistra.fr/">CDS</a>, Strasbourg.
+</footer>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
