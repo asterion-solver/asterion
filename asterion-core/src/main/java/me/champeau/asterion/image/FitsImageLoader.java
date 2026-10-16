@@ -32,6 +32,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.OptionalDouble;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
@@ -131,35 +132,18 @@ public final class FitsImageLoader {
                 throw new IOException("Truncated FITS file " + path);
             }
             var segment = channel.map(FileChannel.MapMode.READ_ONLY, offset, planeSize * planes, arena);
-            var bands = Math.clamp(h / 16, 1, 4 * Runtime.getRuntime().availableProcessors());
+            var bands = Math.clamp(h / 16, 1, 2 * Runtime.getRuntime().availableProcessors());
             IntStream.range(0, bands).parallel().forEach(b -> {
                 var from = (int) ((long) h * b / bands);
                 var to = (int) ((long) h * (b + 1) / bands);
                 var decoder = RowDecoder.of(bitpix, width);
-                var row = new float[width];
                 for (var y = from; y < to; y++) {
                     var base = y * w;
+                    var first = true;
                     for (var p = 0; p < planes; p++) {
                         for (var sy = 0; sy < binning; sy++) {
-                            decoder.decode(segment, p * planeSize + ((long) y * binning + sy) * rowBytes, row);
-                            if (binning == 1) {
-                                for (var x = 0; x < w; x++) {
-                                    out[base + x] += row[x];
-                                }
-                            } else if (binning == 2) {
-                                for (var x = 0; x < w; x++) {
-                                    out[base + x] += row[2 * x] + row[2 * x + 1];
-                                }
-                            } else {
-                                for (var x = 0; x < w; x++) {
-                                    var sum = 0f;
-                                    var start = x * binning;
-                                    for (var sx = 0; sx < binning; sx++) {
-                                        sum += row[start + sx];
-                                    }
-                                    out[base + x] += sum;
-                                }
-                            }
+                            decoder.accumulate(segment, p * planeSize + ((long) y * binning + sy) * rowBytes, out, base, binning, first);
+                            first = false;
                         }
                     }
                     if (scale != 1 || zero != 0) {
@@ -173,14 +157,23 @@ public final class FitsImageLoader {
         return out;
     }
 
-    /** Decodes a row of big-endian pixels to floats. */
+    /**
+     * Decodes rows of big-endian pixels, and adds them to a row of the image, binned. Each type of
+     * pixel has its own loops: the sum of the binned pixels is computed straight from the decoded
+     * values, without a row of floats in between.
+     */
     private abstract static class RowDecoder {
         private static final ValueLayout.OfShort SHORT = ValueLayout.JAVA_SHORT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
         private static final ValueLayout.OfInt INT = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
         private static final ValueLayout.OfFloat FLOAT = ValueLayout.JAVA_FLOAT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
         private static final ValueLayout.OfDouble DOUBLE = ValueLayout.JAVA_DOUBLE_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
-        abstract void decode(MemorySegment segment, long position, float[] row);
+        /**
+         * Decodes a row at a position of the file, and adds its pixels, binned, to a row of the image.
+         *
+         * @param first true if the row of the image must be set rather than added to
+         */
+        abstract void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first);
 
         static RowDecoder of(int bitpix, int width) {
             return switch (bitpix) {
@@ -188,10 +181,28 @@ public final class FitsImageLoader {
                     private final byte[] values = new byte[width];
 
                     @Override
-                    void decode(MemorySegment segment, long position, float[] row) {
+                    void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first) {
                         MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, position, values, 0, width);
-                        for (var i = 0; i < width; i++) {
-                            row[i] = values[i] & 0xFF;
+                        var w = width / binning;
+                        if (first) {
+                            Arrays.fill(out, base, base + w, 0);
+                        }
+                        if (binning == 1) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[x] & 0xFF;
+                            }
+                        } else if (binning == 2) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += (values[2 * x] & 0xFF) + (values[2 * x + 1] & 0xFF);
+                            }
+                        } else {
+                            for (var x = 0; x < w; x++) {
+                                var sum = 0f;
+                                for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                                    sum += values[sx] & 0xFF;
+                                }
+                                out[base + x] += sum;
+                            }
                         }
                     }
                 };
@@ -199,10 +210,28 @@ public final class FitsImageLoader {
                     private final short[] values = new short[width];
 
                     @Override
-                    void decode(MemorySegment segment, long position, float[] row) {
+                    void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first) {
                         MemorySegment.copy(segment, SHORT, position, values, 0, width);
-                        for (var i = 0; i < width; i++) {
-                            row[i] = values[i];
+                        var w = width / binning;
+                        if (first) {
+                            Arrays.fill(out, base, base + w, 0);
+                        }
+                        if (binning == 1) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[x];
+                            }
+                        } else if (binning == 2) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[2 * x] + values[2 * x + 1];
+                            }
+                        } else {
+                            for (var x = 0; x < w; x++) {
+                                var sum = 0f;
+                                for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                                    sum += values[sx];
+                                }
+                                out[base + x] += sum;
+                            }
                         }
                     }
                 };
@@ -210,20 +239,61 @@ public final class FitsImageLoader {
                     private final int[] values = new int[width];
 
                     @Override
-                    void decode(MemorySegment segment, long position, float[] row) {
+                    void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first) {
                         MemorySegment.copy(segment, INT, position, values, 0, width);
-                        for (var i = 0; i < width; i++) {
-                            row[i] = values[i];
+                        var w = width / binning;
+                        if (first) {
+                            Arrays.fill(out, base, base + w, 0);
+                        }
+                        if (binning == 1) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[x];
+                            }
+                        } else if (binning == 2) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += (float) values[2 * x] + values[2 * x + 1];
+                            }
+                        } else {
+                            for (var x = 0; x < w; x++) {
+                                var sum = 0f;
+                                for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                                    sum += values[sx];
+                                }
+                                out[base + x] += sum;
+                            }
                         }
                     }
                 };
                 case -32 -> new RowDecoder() {
+                    private final float[] values = new float[width];
+
                     @Override
-                    void decode(MemorySegment segment, long position, float[] row) {
-                        MemorySegment.copy(segment, FLOAT, position, row, 0, width);
+                    void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first) {
+                        MemorySegment.copy(segment, FLOAT, position, values, 0, width);
                         for (var i = 0; i < width; i++) {
-                            if (Float.isNaN(row[i])) {
-                                row[i] = 0;
+                            if (Float.isNaN(values[i])) {
+                                values[i] = 0;
+                            }
+                        }
+                        var w = width / binning;
+                        if (first) {
+                            Arrays.fill(out, base, base + w, 0);
+                        }
+                        if (binning == 1) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[x];
+                            }
+                        } else if (binning == 2) {
+                            for (var x = 0; x < w; x++) {
+                                out[base + x] += values[2 * x] + values[2 * x + 1];
+                            }
+                        } else {
+                            for (var x = 0; x < w; x++) {
+                                var sum = 0f;
+                                for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                                    sum += values[sx];
+                                }
+                                out[base + x] += sum;
                             }
                         }
                     }
@@ -232,10 +302,19 @@ public final class FitsImageLoader {
                     private final double[] values = new double[width];
 
                     @Override
-                    void decode(MemorySegment segment, long position, float[] row) {
+                    void accumulate(MemorySegment segment, long position, float[] out, int base, int binning, boolean first) {
                         MemorySegment.copy(segment, DOUBLE, position, values, 0, width);
-                        for (var i = 0; i < width; i++) {
-                            row[i] = Double.isNaN(values[i]) ? 0 : (float) values[i];
+                        var w = width / binning;
+                        if (first) {
+                            Arrays.fill(out, base, base + w, 0);
+                        }
+                        for (var x = 0; x < w; x++) {
+                            var sum = 0f;
+                            for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                                var v = values[sx];
+                                sum += Double.isNaN(v) ? 0 : (float) v;
+                            }
+                            out[base + x] += sum;
                         }
                     }
                 };

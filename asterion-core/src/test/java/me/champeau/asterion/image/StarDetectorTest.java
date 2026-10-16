@@ -62,6 +62,37 @@ class StarDetectorTest {
     }
 
     @Test
+    void findsStarsBeyondTheLastTile() {
+        // the width isn't a multiple of the size of the tiles (64): the last tiles extend to the
+        // edge, and the pixels beyond the last tile of 64 pixels are interpolated like the rest
+        var width = 1086;
+        var height = 300;
+        var data = new float[width * height];
+        var random = new java.util.Random(7);
+        for (var i = 0; i < data.length; i++) {
+            data[i] = (float) (500 + 3 * random.nextGaussian());
+        }
+        double[][] stars = {{1075.3, 150.2}, {1035.4, 60.6}, {535.5, 150.5}, {12.4, 100.6}, {535.1, 290.3}};
+        for (var star : stars) {
+            for (var y = 0; y < height; y++) {
+                for (var x = 0; x < width; x++) {
+                    var d2 = (x - star[0]) * (x - star[0]) + (y - star[1]) * (y - star[1]);
+                    data[y * width + x] += (float) (3000 * Math.exp(-d2 / 8));
+                }
+            }
+        }
+        var detected = StarDetector.detect(new GrayImage(width, height, data));
+        assertTrue(detected.size() >= stars.length, "only " + detected.size() + " stars detected");
+        for (var star : stars) {
+            var best = Double.MAX_VALUE;
+            for (var j = 0; j < detected.size(); j++) {
+                best = Math.min(best, Math.hypot(detected.x(j) - star[0], detected.y(j) - star[1]));
+            }
+            assertTrue(best < 0.1, "star at " + star[0] + ", " + star[1] + " found at " + best + " pixels");
+        }
+    }
+
+    @Test
     void ignoresHotPixelsAndEmptyImages() {
         var width = 400;
         var height = 300;

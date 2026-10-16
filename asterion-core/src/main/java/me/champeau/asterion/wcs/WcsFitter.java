@@ -52,11 +52,12 @@ public final class WcsFitter {
             basis[3 * i + 1] = py[i] - crpixY;
             basis[3 * i + 2] = 1;
         }
+        var normal = LinearSolver.normalMatrix(basis, n, 3);
         double[] cd = null;
         for (var iter = 0; iter < 8; iter++) {
             var plane = TangentPlane.at(c[0], c[1], c[2]);
             project(plane, vec, n, xi, eta);
-            var sol = LinearSolver.leastSquares(basis, xi, eta, n, 3);
+            var sol = LinearSolver.leastSquares(normal, basis, xi, eta, n, 3);
             if (sol == null) {
                 return null;
             }
@@ -126,11 +127,13 @@ public final class WcsFitter {
                 }
             }
         }
+        // the tangent point moves between rounds, which changes the observations only
+        var normal = LinearSolver.normalMatrix(basis, n, terms);
         double[][] sol = null;
         for (var round = 0; round < 6; round++) {
             var plane = TangentPlane.at(c[0], c[1], c[2]);
             project(plane, vec, n, xi, eta);
-            sol = LinearSolver.leastSquares(basis, xi, eta, n, terms);
+            sol = LinearSolver.leastSquares(normal, basis, xi, eta, n, terms);
             if (sol == null) {
                 return null;
             }

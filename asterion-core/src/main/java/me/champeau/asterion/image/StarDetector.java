@@ -40,13 +40,8 @@ public final class StarDetector {
     private final int tilesY;
     private float[] background;
     private float[] sigma;
-    private float[] sub;
 
-    /** True if the pixels of the image may be overwritten, which saves a copy of the image. */
-    private final boolean inPlace;
-
-    private StarDetector(GrayImage image, DetectionOptions options, boolean inPlace) {
-        this.inPlace = inPlace;
+    private StarDetector(GrayImage image, DetectionOptions options) {
         this.w = image.width();
         this.h = image.height();
         this.data = image.data();
@@ -64,23 +59,19 @@ public final class StarDetector {
         if (image.width() < 16 || image.height() < 16) {
             return StarList.empty();
         }
-        return new StarDetector(image, options, false).run(image.binning());
+        return new StarDetector(image, options).run(image.binning());
     }
 
     /**
-     * Detects stars, using the pixels of the image as working memory: the image is modified. This
-     * is for images which are not used once stars are detected.
+     * Detects stars in an image which is not used afterwards: the detector may use its pixels as
+     * working memory. It doesn't need to anymore, but the contract remains.
      */
     public static StarList detectInPlace(GrayImage image, DetectionOptions options) {
-        if (image.width() < 16 || image.height() < 16) {
-            return StarList.empty();
-        }
-        return new StarDetector(image, options, true).run(image.binning());
+        return detect(image, options);
     }
 
     private StarList run(int binning) {
         estimateBackground();
-        subtractBackground();
         var peaks = findPeaks();
         return measure(peaks, binning);
     }
@@ -90,7 +81,9 @@ public final class StarDetector {
     }
 
     private static void parallelRows(int rows, int minRowsPerBand, RowBandTask task) {
-        var bands = Math.clamp(rows / minRowsPerBand, 1, 4 * Runtime.getRuntime().availableProcessors());
+        // rows cost about the same: twice as many bands as processors balance the load, and the
+        // buffers of a band are allocated for each of them
+        var bands = Math.clamp(rows / minRowsPerBand, 1, 2 * Runtime.getRuntime().availableProcessors());
         IntStream.range(0, bands).parallel().forEach(b -> {
             var from = (int) ((long) rows * b / bands);
             var to = (int) ((long) rows * (b + 1) / bands);
@@ -220,38 +213,98 @@ public final class StarDetector {
         return a[k];
     }
 
-    /** Subtracts the background, bilinearly interpolated between the centers of the tiles. */
-    private void subtractBackground() {
-        sub = inPlace ? data : new float[w * h];
+    /** The background of a row, interpolated between the rows of tile centers. */
+    private void rowBackground(int y, float[] rowBg) {
         var half = (tile - 1) / 2.0;
-        parallelRows(h, (from, to) -> {
-            var rowBg = new float[tilesX];
-            for (var y = from; y < to; y++) {
-                var gy = (y - half) / tile;
-                var ty0 = Math.clamp((int) Math.floor(gy), 0, tilesY - 1);
-                var ty1 = Math.min(tilesY - 1, ty0 + 1);
-                var fy = (float) Math.clamp(gy - ty0, 0.0, 1.0);
-                for (var tx = 0; tx < tilesX; tx++) {
-                    rowBg[tx] = background[ty0 * tilesX + tx] * (1 - fy) + background[ty1 * tilesX + tx] * fy;
-                }
-                var row = y * w;
-                var firstCenter = (int) Math.ceil(half);
-                for (var x = 0; x < Math.min(w, firstCenter); x++) {
-                    sub[row + x] = data[row + x] - rowBg[0];
-                }
-                for (var tx = 0; tx < tilesX; tx++) {
-                    var c0 = tx * tile + half;
-                    var xStart = (int) Math.ceil(c0);
-                    var xEnd = tx == tilesX - 1 ? w : Math.min(w, (int) Math.ceil(c0 + tile));
-                    var left = rowBg[tx];
-                    var slope = tx == tilesX - 1 ? 0 : (rowBg[tx + 1] - left) / tile;
-                    var offset = (float) (xStart - c0);
-                    for (var x = xStart; x < xEnd; x++) {
-                        sub[row + x] = data[row + x] - (left + slope * (x - xStart + offset));
-                    }
-                }
+        var gy = (y - half) / tile;
+        var ty0 = Math.clamp((int) Math.floor(gy), 0, tilesY - 1);
+        var ty1 = Math.min(tilesY - 1, ty0 + 1);
+        var fy = (float) Math.clamp(gy - ty0, 0.0, 1.0);
+        for (var tx = 0; tx < tilesX; tx++) {
+            rowBg[tx] = background[ty0 * tilesX + tx] * (1 - fy) + background[ty1 * tilesX + tx] * fy;
+        }
+    }
+
+    /**
+     * Subtracts the background of the pixels of a row which are between two columns, interpolated
+     * between the centers of the tiles.
+     *
+     * @param rowBg the background of the row, see {@link #rowBackground}
+     * @param x0 the first column, inclusive
+     * @param x1 the last column, exclusive
+     * @param out receives the subtracted pixels, the one of the first column at the given offset
+     */
+    private void subtractRow(int y, float[] rowBg, int x0, int x1, float[] out, int offset) {
+        var half = (tile - 1) / 2.0;
+        var row = y * w;
+        var firstCenter = (int) Math.ceil(half);
+        for (var x = x0; x < Math.min(x1, firstCenter); x++) {
+            out[offset + x - x0] = data[row + x] - rowBg[0];
+        }
+        // the last tile extends to the edge of the image
+        var firstTile = Math.clamp((int) Math.floor((x0 - half) / tile), 0, tilesX - 1);
+        for (var tx = firstTile; tx < tilesX; tx++) {
+            var c0 = tx * tile + half;
+            var xStart = (int) Math.ceil(c0);
+            if (xStart >= x1) {
+                break;
             }
-        });
+            var xEnd = tx == tilesX - 1 ? w : Math.min(w, (int) Math.ceil(c0 + tile));
+            var left = rowBg[tx];
+            var slope = tx == tilesX - 1 ? 0 : (rowBg[tx + 1] - left) / tile;
+            var shift = (float) (xStart - c0);
+            for (var x = Math.max(x0, xStart); x < Math.min(x1, xEnd); x++) {
+                out[offset + x - x0] = data[row + x] - (left + slope * (x - xStart + shift));
+            }
+        }
+    }
+
+    /**
+     * The background subtracted pixels around a star, computed when they are needed: the
+     * subtracted image is never stored. A window is reused from one star to the next.
+     */
+    private final class Window {
+        private final float[] rowBg = new float[tilesX];
+        private float[] values = new float[32 * 32];
+        private int x0;
+        private int y0;
+        private int width;
+        private int x1;
+        private int y1;
+
+        /** Makes sure the window covers a rectangle, computing it again when it doesn't. */
+        void cover(int left, int top, int right, int bottom) {
+            left = Math.max(0, left);
+            top = Math.max(0, top);
+            right = Math.min(w - 1, right);
+            bottom = Math.min(h - 1, bottom);
+            if (left >= x0 && top >= y0 && right < x1 && bottom < y1) {
+                return;
+            }
+            x0 = Math.min(left, x0);
+            y0 = Math.min(top, y0);
+            x1 = Math.max(right + 1, x1);
+            y1 = Math.max(bottom + 1, y1);
+            width = x1 - x0;
+            if (values.length < width * (y1 - y0)) {
+                values = new float[2 * width * (y1 - y0)];
+            }
+            for (var y = y0; y < y1; y++) {
+                rowBackground(y, rowBg);
+                subtractRow(y, rowBg, x0, x1, values, (y - y0) * width);
+            }
+        }
+
+        /** Starts a new window around a pixel. */
+        void reset(int x, int y, int radius) {
+            x0 = x1 = x;
+            y0 = y1 = y;
+            cover(x - radius, y - radius, x + radius, y + radius);
+        }
+
+        float get(int x, int y) {
+            return values[(y - y0) * width + x - x0];
+        }
     }
 
     private static final class Peaks {
@@ -270,19 +323,23 @@ public final class StarDetector {
     }
 
     /**
-     * Finds the local maxima of the background subtracted image, smoothed by a 5x5 gaussian kernel.
-     * Smoothing is done on the fly, a band of rows at a time: only the few smoothed rows around
-     * the current one are kept, which saves two images worth of memory, and of memory traffic.
+     * Subtracts the background and finds the local maxima of the subtracted image, smoothed by a
+     * 5x5 gaussian kernel, in a single pass over the image, a band of rows at a time: each row is
+     * read once, subtracted and smoothed horizontally, and only the few smoothed rows around the
+     * current one are kept. The subtracted image is never stored: the pixels around the peaks are
+     * subtracted again when stars are measured.
      */
     private Peaks findPeaks() {
         var k = (float) (options.thresholdSigma() * SMOOTHING_NOISE);
         var rows = h - 6;
-        var bands = Math.clamp(rows / 32, 1, 4 * Runtime.getRuntime().availableProcessors());
+        var bands = Math.clamp(rows / 32, 1, 2 * Runtime.getRuntime().availableProcessors());
         var results = new Peaks[bands];
         IntStream.range(0, bands).parallel().forEach(b -> {
             var from = 3 + (int) ((long) rows * b / bands);
             var to = 3 + (int) ((long) rows * (b + 1) / bands);
             var peaks = new Peaks();
+            var rowBg = new float[tilesX];
+            var subtracted = new float[w];
             // horizontally smoothed rows, indexed by y modulo 8
             var horizontal = new float[8][w];
             // smoothed rows y - 1, y and y + 1
@@ -291,12 +348,12 @@ public final class StarDetector {
             var below = new float[w];
             // the smoothed row y needs the horizontally smoothed rows y - 2 to y + 2
             for (var y = from - 3; y <= from + 2; y++) {
-                smoothRow(y, horizontal[y & 7]);
+                smoothRow(y, rowBg, subtracted, horizontal[y & 7]);
             }
             smoothColumn(horizontal, from - 1, above);
             smoothColumn(horizontal, from, current);
             for (var y = from; y < to; y++) {
-                smoothRow(y + 3, horizontal[(y + 3) & 7]);
+                smoothRow(y + 3, rowBg, subtracted, horizontal[(y + 3) & 7]);
                 smoothColumn(horizontal, y + 1, below);
                 var ty = Math.min(tilesY - 1, y / tile);
                 var row = y * w;
@@ -330,13 +387,12 @@ public final class StarDetector {
         return all;
     }
 
-    /** Smoothes a row of the background subtracted image horizontally. */
-    private void smoothRow(int y, float[] out) {
-        var src = sub;
-        var row = y * w;
+    /** Subtracts the background of a row, and smoothes it horizontally. */
+    private void smoothRow(int y, float[] rowBg, float[] subtracted, float[] out) {
+        rowBackground(y, rowBg);
+        subtractRow(y, rowBg, 0, w, subtracted, 0);
         for (var x = 2; x < w - 2; x++) {
-            var i = row + x;
-            out[x] = K0 * (src[i - 2] + src[i + 2]) + K1 * (src[i - 1] + src[i + 1]) + K2 * src[i];
+            out[x] = K0 * (subtracted[x - 2] + subtracted[x + 2]) + K1 * (subtracted[x - 1] + subtracted[x + 1]) + K2 * subtracted[x];
         }
     }
 
@@ -367,9 +423,10 @@ public final class StarDetector {
         var sflux = new float[keep];
         var sfwhm = new float[keep];
         var ok = new boolean[keep];
+        var windows = ThreadLocal.withInitial(Window::new);
         IntStream.range(0, keep).parallel().forEach(j -> {
             var idx = peaks.index[(int) keys[n - 1 - j]];
-            var m = measure(idx % w, idx / w);
+            var m = measure(idx % w, idx / w, windows.get());
             if (m != null) {
                 sx[j] = m[0];
                 sy[j] = m[1];
@@ -440,15 +497,17 @@ public final class StarDetector {
     /**
      * Measures the star which is around a pixel.
      *
+     * @param window a window on the subtracted image, which is moved to the star
      * @return (x, y, flux, fwhm), or null if this isn't a star
      */
-    private double[] measure(int px, int py) {
+    private double[] measure(int px, int py, Window window) {
+        window.reset(px, py, 8);
         var mx = px;
         var my = py;
-        var peak = sub[py * w + px];
+        var peak = window.get(px, py);
         for (var y = py - 1; y <= py + 1; y++) {
             for (var x = px - 1; x <= px + 1; x++) {
-                var v = sub[y * w + x];
+                var v = window.get(x, y);
                 if (v > peak) {
                     peak = v;
                     mx = x;
@@ -463,7 +522,7 @@ public final class StarDetector {
         var around = -peak;
         for (var y = my - 1; y <= my + 1; y++) {
             for (var x = mx - 1; x <= mx + 1; x++) {
-                around += sub[y * w + x];
+                around += window.get(x, y);
             }
         }
         if (around < 0.32f * peak) {
@@ -479,10 +538,10 @@ public final class StarDetector {
             var y1 = Math.min(h - 1, my + radius);
             var x0 = Math.max(0, mx - radius);
             var x1 = Math.min(w - 1, mx + radius);
+            window.cover(x0, y0, x1, y1);
             for (var y = y0; y <= y1; y++) {
-                var row = y * w;
                 for (var x = x0; x <= x1; x++) {
-                    if (sub[row + x] > half) {
+                    if (window.get(x, y) > half) {
                         count++;
                     }
                 }
@@ -508,6 +567,7 @@ public final class StarDetector {
             var y1 = Math.min(h - 1, (int) Math.round(cy) + rad);
             var x0 = Math.max(0, (int) Math.round(cx) - rad);
             var x1 = Math.min(w - 1, (int) Math.round(cx) + rad);
+            window.cover(x0, y0, x1, y1);
             for (var x = x0; x <= x1; x++) {
                 var dx = x - cx;
                 weightX[x - x0] = Math.exp(-dx * dx * inv);
@@ -520,13 +580,12 @@ public final class StarDetector {
             var sumX = 0.0;
             var sumY = 0.0;
             for (var y = y0; y <= y1; y++) {
-                var row = y * w;
                 var dy = y - cy;
                 // the sums of the row, weighted along x only
                 var rowSum = 0.0;
                 var rowSumX = 0.0;
                 for (var x = x0; x <= x1; x++) {
-                    var v = sub[row + x];
+                    var v = window.get(x, y);
                     if (v > 0) {
                         var wv = v * weightX[x - x0];
                         rowSum += wv;
@@ -564,13 +623,13 @@ public final class StarDetector {
         var y1 = Math.min(h - 1, (int) Math.round(cy) + ri);
         var x0 = Math.max(0, (int) Math.round(cx) - ri);
         var x1 = Math.min(w - 1, (int) Math.round(cx) + ri);
+        window.cover(x0, y0, x1, y1);
         for (var y = y0; y <= y1; y++) {
-            var row = y * w;
             var dy = y - cy;
             for (var x = x0; x <= x1; x++) {
                 var dx = x - cx;
                 if (dx * dx + dy * dy <= rf * rf) {
-                    flux += sub[row + x];
+                    flux += window.get(x, y);
                 }
             }
         }
