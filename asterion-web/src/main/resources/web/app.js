@@ -312,9 +312,13 @@ function downloadsView(data) {
 
 async function loadAstap() {
     const data = await (await fetch('api/astap')).json();
-    const card = $('astap');
-    card.hidden = !data.available;
-    if (!data.available) return;
+    // only a native executable can install anything: the card says why it can't, when it can't
+    $('astap').hidden = !data.native;
+    $('astap-install').hidden = !data.available;
+    if (!data.available) {
+        $('astap-state').replaceChildren(element('div', data.reason, 'status error'));
+        return;
+    }
     $('astap-name').textContent = data.targetName;
     $('astap-cli').textContent = data.executableName;
     $('astap-directory').textContent = data.directory;

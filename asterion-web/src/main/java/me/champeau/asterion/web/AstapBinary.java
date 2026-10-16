@@ -57,6 +57,7 @@ final class AstapBinary {
 
         Json describe() {
             return Json.object()
+                    .field("native", nativeImage())
                     .field("available", available)
                     .field("reason", reason)
                     .field("directory", directory == null ? null : directory.toString())
@@ -72,9 +73,14 @@ final class AstapBinary {
     private AstapBinary() {
     }
 
+    /** Tells if this process is a native executable, the only kind which can install anything. */
+    static boolean nativeImage() {
+        return "runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"));
+    }
+
     /** The state, for this process: it must be a native executable, next to the command line one. */
     static State detect() {
-        if (!"runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"))) {
+        if (!nativeImage()) {
             return State.unavailable("The web interface isn't a native executable");
         }
         var running = ProcessHandle.current().info().command().map(Path::of).orElse(null);

@@ -36,7 +36,8 @@ class AstapBinaryTest {
         assertFalse(state.available());
         assertTrue(state.reason().contains("native"), state.reason());
         assertEquals(
-                "{\"available\":false,\"reason\":\"" + state.reason() + "\",\"directory\":null,\"executable\":null,\"executableName\":null,"
+                "{\"native\":false,\"available\":false,\"reason\":\"" + state.reason()
+                        + "\",\"directory\":null,\"executable\":null,\"executableName\":null,"
                         + "\"target\":null,\"targetName\":null,\"installed\":false,\"link\":false}",
                 state.describe().toString());
     }
