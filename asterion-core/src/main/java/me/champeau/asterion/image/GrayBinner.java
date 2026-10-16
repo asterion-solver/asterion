@@ -81,9 +81,23 @@ final class GrayBinner {
             return;
         }
         var offset = by * binnedWidth;
-        var limit = binnedWidth * binning;
-        for (var x = 0; x < limit; x++) {
-            out[offset + x / binning] += values[x];
+        // the common cases have their own loops: a division per pixel is slow
+        if (binning == 1) {
+            for (var x = 0; x < binnedWidth; x++) {
+                out[offset + x] += values[x];
+            }
+        } else if (binning == 2) {
+            for (var x = 0; x < binnedWidth; x++) {
+                out[offset + x] += values[2 * x] + values[2 * x + 1];
+            }
+        } else {
+            for (var x = 0; x < binnedWidth; x++) {
+                var sum = 0f;
+                for (var sx = x * binning; sx < (x + 1) * binning; sx++) {
+                    sum += values[sx];
+                }
+                out[offset + x] += sum;
+            }
         }
     }
 

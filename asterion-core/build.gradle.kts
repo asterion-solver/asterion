@@ -1,5 +1,6 @@
 plugins {
     id("me.champeau.asterion.library")
+    id("me.champeau.asterion.jmh")
 }
 
 description = "Asterion Solver: a fast blind astrometric plate solving library"
@@ -32,3 +33,4 @@ tasks.test {
         maxHeapSize = "8g"
     }
 }
+

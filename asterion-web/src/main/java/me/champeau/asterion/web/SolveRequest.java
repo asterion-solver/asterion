@@ -15,6 +15,7 @@
  */
 package me.champeau.asterion.web;
 
+import me.champeau.asterion.catalog.DeepSkyObjects;
 import me.champeau.asterion.solver.Parity;
 import me.champeau.asterion.solver.Solution;
 import me.champeau.asterion.solver.SolveResult;
@@ -177,6 +178,28 @@ final class SolveRequest {
                     .field("abbreviation", constellation.abbreviation())
                     .field("name", constellation.name()));
             json.field("outline", outline(s));
+            var objects = Json.array();
+            var width = (int) Math.round(s.fieldWidthDeg() * 3600 / s.pixelScale());
+            var height = (int) Math.round(s.fieldHeightDeg() * 3600 / s.pixelScale());
+            for (var found : DeepSkyObjects.inField(s.wcs(), width, height)) {
+                var o = found.object();
+                objects.add(Json.object()
+                        .field("name", o.name())
+                        .field("label", o.label())
+                        .field("designation", o.designation())
+                        .field("commonName", o.commonName().isEmpty() ? null : o.commonName())
+                        .field("type", o.type().description())
+                        .field("ra", o.raDeg())
+                        .field("dec", o.decDeg())
+                        .field("x", found.x())
+                        .field("y", found.y())
+                        .field("distance", found.distanceDeg())
+                        .field("majorArcmin", o.majorArcmin())
+                        .field("minorArcmin", o.minorArcmin())
+                        .field("angle", o.angleDeg())
+                        .field("magnitude", o.magnitude()));
+            }
+            json.field("objects", objects);
             var matches = Json.array();
             for (var match : s.matches()) {
                 matches.add(Json.array().add(match.raDeg()).add(match.decDeg()));

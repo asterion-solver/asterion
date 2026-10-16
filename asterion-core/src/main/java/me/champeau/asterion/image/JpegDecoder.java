@@ -66,6 +66,10 @@ final class JpegDecoder {
     }
 
     private final byte[] data;
+    /** True when only the brightness of the pixels is needed: the chroma of YCbCr images isn't decoded. */
+    private final boolean brightnessOnly;
+    /** True when the image is YCbCr and only its luma is decoded, see {@link #brightnessOnly}. */
+    private boolean lumaOnly;
     private int position;
     private final int[][] quantTables = new int[4][];
     private final HuffmanTable[] dcTables = new HuffmanTable[4];
@@ -88,17 +92,22 @@ final class JpegDecoder {
     private int bitCount;
     private boolean markerFound;
 
-    private JpegDecoder(byte[] data) {
+    private JpegDecoder(byte[] data, boolean brightnessOnly) {
         this.data = data;
+        this.brightnessOnly = brightnessOnly;
     }
 
     static boolean accepts(byte[] header) {
         return header.length >= 3 && (header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF;
     }
 
+    /**
+     * Decodes the brightness of the pixels of an image: the luma of YCbCr images, which is decoded
+     * alone, the sum of the components otherwise.
+     */
     static GrayImage decode(byte[] data, int binning) throws IOException {
         try {
-            var decoder = new JpegDecoder(data);
+            var decoder = new JpegDecoder(data, true);
             decoder.readMarkers();
             var binner = new GrayBinner(decoder.width, decoder.height, binning);
             decoder.decodeRows(decoder.rgb(), binner::row);
@@ -118,9 +127,9 @@ final class JpegDecoder {
      */
     static void decodeEmbedded(byte[] tables, byte[] data, boolean rgb, int width, RowConsumer rows) throws IOException {
         try {
-            var decoder = new JpegDecoder(data);
+            var decoder = new JpegDecoder(data, false);
             if (tables != null) {
-                var tablesDecoder = new JpegDecoder(tables);
+                var tablesDecoder = new JpegDecoder(tables, false);
                 tablesDecoder.readMarkers();
                 System.arraycopy(tablesDecoder.quantTables, 0, decoder.quantTables, 0, 4);
                 System.arraycopy(tablesDecoder.dcTables, 0, decoder.dcTables, 0, 4);
@@ -156,8 +165,10 @@ final class JpegDecoder {
         int acTable;
         int blocksPerLine;
         int blocksPerColumn;
-        /** The coefficients of all the blocks, 64 per block, in natural order. */
+        /** The coefficients of all the blocks, 64 per block, in natural order; a single block when the component is skipped. */
         short[] coefficients;
+        /** True if the component isn't decoded: its blocks are parsed when a scan interleaves them, and dropped. */
+        boolean skipped;
         int predictor;
         /** The size of the component, in samples. */
         int sampledWidth;
@@ -316,12 +327,17 @@ final class JpegDecoder {
         if (blocks > 8L * data.length + 1024) {
             throw new IOException("Truncated or damaged JPEG file: " + width + "x" + height + " pixels in " + data.length + " bytes");
         }
-        for (var c : components) {
+        // the luma of YCbCr images is their brightness: the chroma components are skipped when the
+        // luma has the full resolution, which is always the case in practice
+        lumaOnly = brightnessOnly && count == 3 && !rgb() && components[0].h == maxH && components[0].v == maxV;
+        for (var i = 0; i < count; i++) {
+            var c = components[i];
             c.sampledWidth = ceilDiv(width * c.h, maxH);
             c.sampledHeight = ceilDiv(height * c.v, maxV);
             c.blocksPerLine = mcusX * c.h;
             c.blocksPerColumn = mcusY * c.v;
-            c.coefficients = new short[c.blocksPerLine * c.blocksPerColumn * 64];
+            c.skipped = lumaOnly && i > 0;
+            c.coefficients = new short[c.skipped ? 64 : c.blocksPerLine * c.blocksPerColumn * 64];
         }
         position = end;
     }
@@ -414,7 +430,27 @@ final class JpegDecoder {
             al = 0;
         }
         scanned = true;
-        decodeScan(scanComponents, ss, se, ah, al);
+        var needed = false;
+        for (var c : scanComponents) {
+            needed |= !c.skipped;
+        }
+        if (needed) {
+            decodeScan(scanComponents, ss, se, ah, al);
+        } else {
+            skipScan();
+        }
+    }
+
+    /** Skips the entropy-coded data of a scan which only has skipped components, up to the next marker. */
+    private void skipScan() throws IOException {
+        while (true) {
+            var marker = nextMarker();
+            if (marker < 0xD0 || marker > 0xD7) {
+                // the marker is read again by the caller
+                position -= 2;
+                return;
+            }
+        }
     }
 
     private void decodeScan(Component[] scan, int ss, int se, int ah, int al) throws IOException {
@@ -438,28 +474,36 @@ final class JpegDecoder {
             totalMcus = mcusX * mcusY;
         }
         var restarts = restartInterval;
+        var untilRestart = restarts;
+        // the row and the column of the unit, counted rather than divided for each of them
+        var mcuRow = 0;
+        var mcuCol = 0;
         for (var mcu = 0; mcu < totalMcus; mcu++) {
-            if (restarts > 0 && mcu > 0 && mcu % restarts == 0) {
+            if (restarts > 0 && mcu > 0 && --untilRestart == 0) {
                 restart(scan);
+                untilRestart = restarts;
+            }
+            if (mcuCol == unitsPerLine) {
+                mcuCol = 0;
+                mcuRow++;
             }
             if (single) {
                 var c = scan[0];
-                var row = mcu / unitsPerLine;
-                var col = mcu % unitsPerLine;
-                decodeBlock(c, (row * c.blocksPerLine + col) * 64, ss, se, ah, al);
+                decodeBlock(c, (mcuRow * c.blocksPerLine + mcuCol) * 64, ss, se, ah, al);
             } else {
-                var mcuRow = mcu / mcusX;
-                var mcuCol = mcu % mcusX;
                 for (var c : scan) {
                     for (var v = 0; v < c.v; v++) {
                         for (var h = 0; h < c.h; h++) {
                             var blockRow = mcuRow * c.v + v;
                             var blockCol = mcuCol * c.h + h;
-                            decodeBlock(c, (blockRow * c.blocksPerLine + blockCol) * 64, ss, se, ah, al);
+                            // a skipped component is parsed into its single block: what it decodes
+                            // doesn't depend on the coefficients, in baseline and DC scans
+                            decodeBlock(c, c.skipped ? 0 : (blockRow * c.blocksPerLine + blockCol) * 64, ss, se, ah, al);
                         }
                     }
                 }
             }
+            mcuCol++;
         }
         // the entropy-coded data ends at the next marker: when the bit reader found it, it's read again
         if (markerFound) {
@@ -697,7 +741,9 @@ final class JpegDecoder {
             if (c.quant == null) {
                 throw new IOException("JPEG component without data");
             }
-            inverseDct(c);
+            if (!c.skipped) {
+                inverseDct(c);
+            }
         }
         // rows are converted in parallel, by bands, and given to the consumer in order
         var band = new float[Math.min(height, ROWS_PER_BAND)][width];
@@ -720,8 +766,19 @@ final class JpegDecoder {
     private static final int ROWS_PER_BAND = 256;
     private static final int ROWS_PER_TASK = 16;
 
-    /** Computes the brightness of the pixels of a row: the sum of their red, green and blue values. */
+    /**
+     * Computes the brightness of the pixels of a row: their luma when only the luma was decoded,
+     * the sum of their red, green and blue values otherwise.
+     */
     private void convertRow(int y, boolean rgb, int[][] upsampled, float[] values) {
+        if (lumaOnly) {
+            var luma = components[0];
+            var row = y * luma.blocksPerLine * 8;
+            for (var x = 0; x < width; x++) {
+                values[x] = luma.samples[row + x] & 0xFF;
+            }
+            return;
+        }
         for (var i = 0; i < components.length; i++) {
             upsample(components[i], y, upsampled[i]);
         }

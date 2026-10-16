@@ -8,6 +8,8 @@ plugins {
 dependencies {
     implementation(libs.graalvm.native.plugin)
     implementation(libs.spotless.plugin)
+    // microbenchmarks of asterion-core: on the shared classpath, like the other plugins
+    implementation(libs.jmh.plugin)
 }
 
 tasks.withType<KotlinJvmCompile>().configureEach {

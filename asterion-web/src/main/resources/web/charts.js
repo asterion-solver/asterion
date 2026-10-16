@@ -175,6 +175,22 @@ function drawField(content, projection, outline) {
     }
 }
 
+/** The deep sky objects of the image: an ellipse of their size, and their name. */
+function drawObjects(content, projection, objects) {
+    for (const o of objects.slice(0, 12)) {
+        const p = projection.project(o.ra, o.dec);
+        if (p === null) continue;
+        // the ellipse of the object, in pixels of the chart: the scale is the one at the center
+        const pixelsPerDegree = projection.scale * 2 * Math.tan(0.5 * RAD);
+        const major = Math.max(6, (o.majorArcmin || 2) / 60 * pixelsPerDegree / 2);
+        const minor = Math.max(6, (o.minorArcmin || o.majorArcmin || 2) / 60 * pixelsPerDegree / 2);
+        // position angles are east of north, and east is on the left
+        const angle = o.angle === null || o.angle === undefined ? 0 : -o.angle;
+        content.append(svgElement('ellipse', {cx: p[0], cy: p[1], rx: major, ry: minor, transform: `rotate(${angle} ${p[0]} ${p[1]})`, class: 'sky-object'}));
+        content.append(svgElement('text', {x: p[0], y: p[1] - minor - 4, class: 'sky-object-label'}, o.name));
+    }
+}
+
 function drawCompass(svg) {
     svg.append(svgElement('text', {x: SIZE / 2, y: 22, class: 'sky-compass'}, 'N'));
     svg.append(svgElement('text', {x: 16, y: SIZE / 2 + 5, class: 'sky-compass'}, 'E'));
@@ -239,6 +255,7 @@ async function fieldChart(data, solution) {
     const matches = solution.matches.map(([ra, dec]) => projection.project(ra, dec)).filter(p => p !== null)
         .map(p => `M${(p[0] - 4.5).toFixed(1)} ${p[1].toFixed(1)}a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0`);
     content.append(svgElement('path', {d: matches.join(''), class: 'sky-match'}));
+    drawObjects(content, projection, solution.objects || []);
     drawCompass(svg);
     return figure(svg, `${formatAngle(2 * radius)} across: ${stars.length / 3} stars of ${catalog.catalog}, `
         + `the ${solution.matches.length} matched ones circled.`);

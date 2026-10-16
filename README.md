@@ -36,7 +36,8 @@ asterion --download-catalog tycho2
 ```
 
 Then solve images, which can be FITS files (including compressed ones), PNG, JPEG, TIFF or BMP. Color images are
-solved from the sum of their channels, and color profiles are ignored:
+solved from the sum of their channels (the luma of JPEG images, which is decoded alone), and color profiles are
+ignored:
 
 ```
 $ asterion M33.fits
@@ -47,6 +48,7 @@ M33.fits: solved in 38 ms (read 17, detect 13, solve 8)
   Focal:     851 mm (3.76 µm pixels)
   Rotation:  -130.611° east of north, flipped
   Stars:     878 matched out of 1000, RMS 0.07" (0.08 px)
+  Objects:   M 33 (Triangulum Galaxy, Triangulum Pinwheel), IC 136, IC 139, IC 134, IC 140, and 12 more
 ```
 
 Useful options (see `asterion --help` for all of them):
@@ -150,6 +152,9 @@ ln -s "$(command -v asterion)" ~/bin/astap      # Windows: copy asterion.exe to 
 asterion astap -f image.fits -r 30 -fov 1.7     # the same mode, without renaming
 ```
 
+The [web interface](#web-interface) does it with a button: it installs `astap` (a link, or a copy on Windows)
+next to the executables of the archive.
+
 This is a **best effort** emulation, following the [specification](docs/astap-interface.md) which was
 written from the manual, the outputs of `astap_cli` and the source of N.I.N.A. and CCDciel:
 
@@ -182,10 +187,16 @@ Open the address in a browser. `--port` changes the port (0 for any free one), `
 of the catalogs. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
 the network, without any access control.
 
+In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
+the next; other browsers decide for themselves. Dropping a file on the page works everywhere.
+
 A solution comes with two charts, north up and east left: where the image is among the constellations, with
 the name of its constellation, and the stars of the catalog around it, the ones which were matched being
 circled. The constellation lines are those of [Marc van der Sluys](https://github.com/MarcvdSluys/ConstellationLines)
 (CC BY 4.0), see [the credits of the sky data](asterion-web/third-party/sky-data.md).
+
+When the web interface runs from the archive, next to `asterion`, it offers to install the `astap` executable of
+the [ASTAP compatibility mode](#astap-compatibility-mode) there, for the programs which call ASTAP.
 
 A solution can be downloaded as a FITS image with the solution in its header (for FITS images; compressed
 ones are written uncompressed), as a FITS header alone (a `.wcs` file, like those of astrometry.net and of
@@ -252,7 +263,9 @@ The solver is also a Java library, which other programs can embed: see [DEVELOPE
 Apache License, version 2.0.
 
 This software is based in part on the work of the Independent JPEG Group: its JPEG decoder reproduces parts of
-the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md).
+the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md). The deep sky objects
+it names come from [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC BY-SA 4.0), see
+[third-party/openngc.md](third-party/openngc.md).
 
 This software uses data from the Tycho-2 catalogue (Høg et al., 2000) and from the European Space Agency
 mission Gaia, processed by the Gaia Data Processing and Analysis Consortium.

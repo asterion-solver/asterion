@@ -83,15 +83,19 @@ public final class LinearSolver {
      * @return the two solutions, or null if the problem is degenerate
      */
     public static double[][] leastSquares(double[] basis, double[] y1, double[] y2, int n, int terms) {
+        return leastSquares(normalMatrix(basis, n, terms), basis, y1, y2, n, terms);
+    }
+
+    /**
+     * The normal matrix of a design matrix, AᵀA, which can be reused to solve several problems
+     * with the same observations, see {@link #leastSquares(double[], double[], double[], double[], int, int)}.
+     */
+    public static double[] normalMatrix(double[] basis, int n, int terms) {
         var ata = new double[terms * terms];
-        var atb1 = new double[terms];
-        var atb2 = new double[terms];
         for (var i = 0; i < n; i++) {
             var row = i * terms;
             for (var p = 0; p < terms; p++) {
                 var bp = basis[row + p];
-                atb1[p] += bp * y1[i];
-                atb2[p] += bp * y2[i];
                 for (var q = p; q < terms; q++) {
                     ata[p * terms + q] += bp * basis[row + q];
                 }
@@ -102,8 +106,25 @@ public final class LinearSolver {
                 ata[p * terms + q] = ata[q * terms + p];
             }
         }
-        var copy = ata.clone();
-        if (!solve(copy, atb1, terms) || !solve(ata, atb2, terms)) {
+        return ata;
+    }
+
+    /**
+     * Solves two least squares problems sharing the same design matrix, which normal matrix was
+     * computed already. The normal matrix is not modified.
+     */
+    public static double[][] leastSquares(double[] ata, double[] basis, double[] y1, double[] y2, int n, int terms) {
+        var atb1 = new double[terms];
+        var atb2 = new double[terms];
+        for (var i = 0; i < n; i++) {
+            var row = i * terms;
+            for (var p = 0; p < terms; p++) {
+                var bp = basis[row + p];
+                atb1[p] += bp * y1[i];
+                atb2[p] += bp * y2[i];
+            }
+        }
+        if (!solve(ata.clone(), atb1, terms) || !solve(ata.clone(), atb2, terms)) {
             return null;
         }
         return new double[][]{atb1, atb2};

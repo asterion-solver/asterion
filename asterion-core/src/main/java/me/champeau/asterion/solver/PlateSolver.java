@@ -49,6 +49,12 @@ public final class PlateSolver {
      * goes on without it. The cost of an unsuccessful search grows with the cube of this number.
      */
     private static final int HINT_QUAD_STARS = 30;
+    /** Detections wider than this number of times the size of stars aren't stars, see {@link #compactStars}. */
+    private static final double EXTENDED_FWHM_FACTOR = 4;
+    /** The number of brightest detections among which extended objects must be a minority, see {@link #compactStars}. */
+    private static final int SIZE_REFERENCE_STARS = 100;
+    /** The largest share of the brightest detections which can be extended objects, see {@link #compactStars}. */
+    private static final double MAX_EXTENDED_FRACTION = 0.6;
     /** The relative error which is tolerated on the scale found in image files. */
     private static final double HINT_SCALE_TOLERANCE = 0.25;
 
@@ -98,6 +104,50 @@ public final class PlateSolver {
                 new SolveResult.Stats(s.quads(), s.candidates(), s.verifications(), loadMillis, detectMillis, s.solveMillis(),
                         s.usedHints()),
                 result.pixelSizeMicrons().orElse(Double.NaN));
+    }
+
+    /**
+     * The stars which are used to build quads: the ones which look like stars. Galaxies, nebulae
+     * and other extended objects are detected as very bright, very large "stars", especially in
+     * stretched images, and would be tried first: the quads of the index are made of point
+     * sources, so these never match. Saturated stars are larger than the others too, but much
+     * less, and they are kept. Extended objects are a minority of the brightest detections: when
+     * most of them would be left out, the size of stars is wrong, because the faint detections
+     * are noise rather than stars, and nothing is left out. The list stays sorted by decreasing
+     * brightness.
+     */
+    static StarList compactStars(StarList stars) {
+        var limit = EXTENDED_FWHM_FACTOR * stars.medianFwhm();
+        var fwhm = stars.fwhm();
+        var kept = 0;
+        var brightestKept = 0;
+        var brightest = Math.min(stars.size(), SIZE_REFERENCE_STARS);
+        for (var i = 0; i < stars.size(); i++) {
+            if (fwhm[i] <= limit) {
+                kept++;
+                if (i < brightest) {
+                    brightestKept++;
+                }
+            }
+        }
+        if (kept == stars.size() || kept < 4 || brightestKept < (1 - MAX_EXTENDED_FRACTION) * brightest) {
+            return stars;
+        }
+        var x = new double[kept];
+        var y = new double[kept];
+        var flux = new float[kept];
+        var size = new float[kept];
+        var k = 0;
+        for (var i = 0; i < stars.size(); i++) {
+            if (fwhm[i] <= limit) {
+                x[k] = stars.x(i);
+                y[k] = stars.y(i);
+                flux[k] = stars.flux(i);
+                size[k] = fwhm[i];
+                k++;
+            }
+        }
+        return new StarList(x, y, flux, size);
     }
 
     /**
@@ -177,8 +227,9 @@ public final class PlateSolver {
             options = options.toBuilder().fieldOfView(0, 0).scale(min, max).build();
         }
         var attempts = plan(hints, options);
-        var x = stars.x();
-        var y = stars.y();
+        var compact = compactStars(stars);
+        var x = compact.x();
+        var y = compact.y();
         var quads = 0L;
         var candidates = 0L;
         var verifications = 0L;
@@ -189,14 +240,14 @@ public final class PlateSolver {
             var o = attempt.options();
             var hint = o.hasPosition() ? QuadSearch.vector(o.raDeg(), o.decDeg()) : null;
             // Most images match with a tolerance which is much smaller than what distorted images
-            // require, and which gives far fewer false matches to verify: when the whole sky is
-            // searched, it is worth trying it first. The second pass is for images taken with short
+            // require, and which gives far fewer false matches to verify: it is worth trying it
+            // first, around a hinted position too. The second pass is for images taken with short
             // focal lengths, which have many bright stars: it doesn't need to go as deep.
-            var twoPasses = hint == null && o.codeTolerance() > STRICT_CODE_TOLERANCE;
+            var twoPasses = o.codeTolerance() > STRICT_CODE_TOLERANCE;
             for (var pass = 0; pass < (twoPasses ? 2 : 1); pass++) {
                 var tolerance = twoPasses && pass == 0 ? STRICT_CODE_TOLERANCE : o.codeTolerance();
                 var maxStars = twoPasses && pass == 1 ? Math.max(20, o.maxQuadStars() / 2) : o.maxQuadStars();
-                var search = new QuadSearch(indexes, x, y, stars.size(), width, height, o, epoch, maxStars, tolerance,
+                var search = new QuadSearch(indexes, x, y, compact.size(), width, height, o, epoch, maxStars, tolerance,
                         o.minScale() * Sphere.ARCSEC, o.maxScale() * Sphere.ARCSEC, hint, Math.toRadians(o.searchRadiusDeg()), deadline);
                 var h = search.run();
                 quads += search.quads;

@@ -138,6 +138,42 @@ drop.addEventListener('drop', event => {
 });
 $('file').addEventListener('change', showFile);
 
+// Browsers which have the File System Access API (Chrome, Edge) remember the directory of the
+// last image picked with this identifier, from one session to the next: the picker opens there.
+// Other browsers get the file input of the page, whose directory is up to them.
+if (window.showOpenFilePicker) {
+    drop.addEventListener('click', event => {
+        event.preventDefault();
+        pickImage();
+    });
+}
+
+async function pickImage() {
+    let handles;
+    try {
+        handles = await window.showOpenFilePicker({
+            id: 'asterion-images',
+            types: [{
+                description: 'Images',
+                accept: {
+                    'image/fits': ['.fits', '.fit', '.fts', '.fz'],
+                    'image/png': ['.png'],
+                    'image/jpeg': ['.jpg', '.jpeg'],
+                    'image/tiff': ['.tif', '.tiff'],
+                    'image/bmp': ['.bmp'],
+                },
+            }],
+        });
+    } catch (e) {
+        // the picker was closed without choosing a file
+        return;
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(await handles[0].getFile());
+    $('file').files = transfer.files;
+    showFile();
+}
+
 function showFile() {
     const file = $('file').files[0];
     $('drop-text').textContent = file ? `${file.name} (${size(file.size)})` : 'Drop an image here, or click to choose one';
@@ -181,6 +217,7 @@ function resultView(data) {
         return views;
     }
     views.push(element('div', `Solved in ${time}`, 'status ok'));
+    views.push(objectsView(data.objects || []));
     const metrics = element('div', undefined, 'metrics');
     const metric = (label, value) => {
         const m = element('div', value);
@@ -212,6 +249,28 @@ function resultView(data) {
     views.push(details);
     views.push(downloadsView(data));
     return views;
+}
+
+/** The deep sky objects of the image: "Contains M 31 (Andromeda Galaxy), M 110, M 32 and 4 more objects". */
+function objectsView(objects) {
+    const view = element('div', undefined, 'objects');
+    if (objects.length === 0) {
+        view.append(element('span', 'No catalogued deep sky object in the field', 'muted'));
+        return view;
+    }
+    const shown = objects.slice(0, 5);
+    view.append(element('span', 'Contains '));
+    shown.forEach((o, i) => {
+        const name = element('span', o.label, 'object');
+        name.title = `${o.type}, ${o.distance.toFixed(2)}° from the center` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '');
+        view.append(i > 0 ? ', ' : '', name);
+    });
+    if (objects.length > shown.length) {
+        const more = element('span', ` and ${objects.length - shown.length} more`, 'muted');
+        more.title = objects.slice(shown.length).map(o => o.label).join(', ');
+        view.append(more);
+    }
+    return view;
 }
 
 /** The files of a solution: the image with its solution, its header, the matched stars, the result. */
@@ -249,4 +308,33 @@ function downloadsView(data) {
     return view;
 }
 
+// --- the ASTAP compatible executable, when this is a native executable next to the command line one ---
+
+async function loadAstap() {
+    const data = await (await fetch('api/astap')).json();
+    // only a native executable can install anything: the card says why it can't, when it can't
+    $('astap').hidden = !data.native;
+    $('astap-install').hidden = !data.available;
+    if (!data.available) {
+        $('astap-state').replaceChildren(element('div', data.reason, 'status error'));
+        return;
+    }
+    $('astap-name').textContent = data.targetName;
+    $('astap-cli').textContent = data.executableName;
+    $('astap-directory').textContent = data.directory;
+    $('astap-state').replaceChildren(element('div', data.installed
+        ? `Installed: ${data.target}${data.link ? ' (a link to ' + data.executableName + ')' : ''}`
+        : 'Not installed', data.installed ? 'status ok' : 'status'));
+    $('astap-install').textContent = (data.installed ? 'Reinstall ' : 'Install ') + data.targetName;
+}
+
+$('astap-install').addEventListener('click', async () => {
+    const response = await fetch('api/astap', {method: 'POST'});
+    if (!response.ok) {
+        alert((await response.json()).error);
+    }
+    await loadAstap();
+});
+
 loadCatalogs();
+loadAstap();

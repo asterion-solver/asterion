@@ -114,6 +114,12 @@ class WebServerTest {
         assertEquals("{\"error\":\"This image isn't kept anymore: solve it again\"}", expired.body());
         assertEquals(404, get("/api/download?format=wcs").statusCode());
 
+        // the ASTAP compatible executable can't be installed by a JVM
+        var astap = get("/api/astap");
+        assertEquals(200, astap.statusCode());
+        assertTrue(astap.body().startsWith("{\"native\":false,\"available\":false,"), astap.body());
+        assertEquals(409, post("/api/astap", new byte[0]).statusCode());
+
         var unknown = post("/api/install?name=hipparcos", new byte[0]);
         assertEquals(400, unknown.statusCode());
         assertEquals("{\"error\":\"Unknown catalog hipparcos\"}", unknown.body());
