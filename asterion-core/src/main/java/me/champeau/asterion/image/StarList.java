@@ -25,19 +25,34 @@ import java.util.Arrays;
  * @param y the ordinates of the stars
  * @param flux the brightness of the stars, in arbitrary units
  * @param fwhm the full width at half maximum of the stars, in pixels, or 0 if unknown
+ * @param concentration how much the light of each star is concentrated, compared to a star with a
+ * gaussian profile of the same size: about 1 for stars, less for galaxies, nebulae and other
+ * extended objects, or 1 if unknown
  */
 @SuppressWarnings("ArrayRecordComponent") // star lists are large, and never modified once created
 public record StarList(
         double[] x,
         double[] y,
         float[] flux,
-        float[] fwhm) {
-    private static final StarList EMPTY = new StarList(new double[0], new double[0], new float[0], new float[0]);
+        float[] fwhm,
+        float[] concentration) {
+    private static final StarList EMPTY = new StarList(new double[0], new double[0], new float[0], new float[0], new float[0]);
 
     public StarList {
-        if (y.length != x.length || flux.length != x.length || fwhm.length != x.length) {
+        if (y.length != x.length || flux.length != x.length || fwhm.length != x.length || concentration.length != x.length) {
             throw new IllegalArgumentException("All the arrays must have the same length");
         }
+    }
+
+    /** A list of stars whose concentration is unknown: they are taken for stars. */
+    public StarList(double[] x, double[] y, float[] flux, float[] fwhm) {
+        this(x, y, flux, fwhm, ones(x.length));
+    }
+
+    private static float[] ones(int n) {
+        var ones = new float[n];
+        Arrays.fill(ones, 1);
+        return ones;
     }
 
     public static StarList empty() {

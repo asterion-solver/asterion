@@ -88,6 +88,10 @@ final class QuadSearch {
     long candidates;
     long verifications;
     boolean timedOut;
+    /** The search gives up after this many quads: a budget for searches which are rarely needed. */
+    long maxQuads = Long.MAX_VALUE;
+    /** The search gives up after this many verifications too: they are what costs when quads have many candidates. */
+    long maxVerifications = Long.MAX_VALUE;
 
     /**
      * @param epoch the date of the image, as a Julian year
@@ -157,6 +161,9 @@ final class QuadSearch {
         for (var nn = 1; nn < n; nn++) {
             if (System.nanoTime() > deadline) {
                 timedOut = true;
+                return null;
+            }
+            if (quads >= maxQuads || verifications >= maxVerifications) {
                 return null;
             }
             var px = x[nn];

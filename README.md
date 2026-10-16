@@ -217,7 +217,10 @@ Its API is what the page uses:
 ## How it works
 
 1. **Star extraction**. The background of the image and its noise are estimated, then stars are detected
-   and measured precisely. Hot pixels are rejected, and raw frames of color sensors are binned 2x2.
+   and measured precisely. Hot pixels are rejected, and raw frames of color sensors are binned 2x2. The size
+   of each detection tells stars from galaxies and nebulae, and how concentrated its light is tells them from
+   the knots of nebulae, which stretched images are full of: the detections which look like stars are
+   searched first.
 2. **Geometric hashing**. Groups of four stars are described by a code which doesn't depend on the position,
    scale and orientation of the image, as in [astrometry.net](https://arxiv.org/abs/0910.2233). An index
    contains millions of such groups, built from the brightest stars of each region of the sky at all

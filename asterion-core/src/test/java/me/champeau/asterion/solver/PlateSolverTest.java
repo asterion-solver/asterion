@@ -259,6 +259,14 @@ class PlateSolverTest {
         assertEquals(200, compact.x(0));
         assertEquals(1e5f, compact.flux(0));
         assertEquals(600, compact.x(4));
+        // knots of a nebula: the size of stars, but their light spread rather than concentrated
+        var concentration = new float[]{0.3f, 0.8f, 1.1f, 0.4f, 0.95f, 1};
+        var concentrated = PlateSolver.concentratedStars(new StarList(x, y, flux, fwhm, concentration));
+        assertEquals(4, concentrated.size());
+        assertEquals(200, concentrated.x(0));
+        assertEquals(300, concentrated.x(1));
+        assertEquals(500, concentrated.x(2));
+        assertSame(compact, PlateSolver.concentratedStars(compact));
         // too few stars to be picky
         var few = new StarList(new double[]{1, 2, 3, 4}, new double[]{1, 2, 3, 4}, new float[]{4, 3, 2, 1}, new float[]{40, 3, 3, 3});
         assertSame(few, PlateSolver.compactStars(few));

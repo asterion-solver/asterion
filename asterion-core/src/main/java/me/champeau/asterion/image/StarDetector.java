@@ -30,6 +30,8 @@ public final class StarDetector {
     /** Noise reduction factor of the smoothing kernel. */
     private static final double SMOOTHING_NOISE = 70.0 / 256;
     private static final int MAX_DEDUPE_RADIUS = 32;
+    /** Pixels at this fraction of the brightest pixel of the image are saturated. */
+    private static final float SATURATION = 0.95f;
 
     private final int w;
     private final int h;
@@ -40,6 +42,8 @@ public final class StarDetector {
     private final int tilesY;
     private float[] background;
     private float[] sigma;
+    /** The brightest pixel of the image: pixels this bright are saturated. */
+    private float brightest;
 
     private StarDetector(GrayImage image, DetectionOptions options) {
         this.w = image.width();
@@ -334,12 +338,14 @@ public final class StarDetector {
         var rows = h - 6;
         var bands = Math.clamp(rows / 32, 1, 2 * Runtime.getRuntime().availableProcessors());
         var results = new Peaks[bands];
+        var maxima = new float[bands];
         IntStream.range(0, bands).parallel().forEach(b -> {
             var from = 3 + (int) ((long) rows * b / bands);
             var to = 3 + (int) ((long) rows * (b + 1) / bands);
             var peaks = new Peaks();
             var rowBg = new float[tilesX];
             var subtracted = new float[w];
+            var max = Float.NEGATIVE_INFINITY;
             // horizontally smoothed rows, indexed by y modulo 8
             var horizontal = new float[8][w];
             // smoothed rows y - 1, y and y + 1
@@ -348,12 +354,12 @@ public final class StarDetector {
             var below = new float[w];
             // the smoothed row y needs the horizontally smoothed rows y - 2 to y + 2
             for (var y = from - 3; y <= from + 2; y++) {
-                smoothRow(y, rowBg, subtracted, horizontal[y & 7]);
+                max = Math.max(max, smoothRow(y, rowBg, subtracted, horizontal[y & 7]));
             }
             smoothColumn(horizontal, from - 1, above);
             smoothColumn(horizontal, from, current);
             for (var y = from; y < to; y++) {
-                smoothRow(y + 3, rowBg, subtracted, horizontal[(y + 3) & 7]);
+                max = Math.max(max, smoothRow(y + 3, rowBg, subtracted, horizontal[(y + 3) & 7]));
                 smoothColumn(horizontal, y + 1, below);
                 var ty = Math.min(tilesY - 1, y / tile);
                 var row = y * w;
@@ -377,7 +383,12 @@ public final class StarDetector {
                 below = t;
             }
             results[b] = peaks;
+            maxima[b] = max;
         });
+        brightest = Float.NEGATIVE_INFINITY;
+        for (var max : maxima) {
+            brightest = Math.max(brightest, max);
+        }
         var all = new Peaks();
         for (var p : results) {
             for (var i = 0; i < p.size; i++) {
@@ -387,13 +398,23 @@ public final class StarDetector {
         return all;
     }
 
-    /** Subtracts the background of a row, and smoothes it horizontally. */
-    private void smoothRow(int y, float[] rowBg, float[] subtracted, float[] out) {
+    /**
+     * Subtracts the background of a row, and smoothes it horizontally.
+     *
+     * @return the brightest pixel of the row
+     */
+    private float smoothRow(int y, float[] rowBg, float[] subtracted, float[] out) {
         rowBackground(y, rowBg);
         subtractRow(y, rowBg, 0, w, subtracted, 0);
         for (var x = 2; x < w - 2; x++) {
             out[x] = K0 * (subtracted[x - 2] + subtracted[x + 2]) + K1 * (subtracted[x - 1] + subtracted[x + 1]) + K2 * subtracted[x];
         }
+        var max = Float.NEGATIVE_INFINITY;
+        var row = y * w;
+        for (var x = 0; x < w; x++) {
+            max = Math.max(max, data[row + x]);
+        }
+        return max;
     }
 
     /** Smoothes horizontally smoothed rows vertically, giving the smoothed row y. */
@@ -422,6 +443,7 @@ public final class StarDetector {
         var sy = new double[keep];
         var sflux = new float[keep];
         var sfwhm = new float[keep];
+        var sconcentration = new float[keep];
         var ok = new boolean[keep];
         var windows = ThreadLocal.withInitial(Window::new);
         IntStream.range(0, keep).parallel().forEach(j -> {
@@ -432,6 +454,7 @@ public final class StarDetector {
                 sy[j] = m[1];
                 sflux[j] = (float) m[2];
                 sfwhm[j] = (float) m[3];
+                sconcentration[j] = (float) m[4];
                 ok[j] = true;
             }
         });
@@ -455,6 +478,7 @@ public final class StarDetector {
         var oy = new double[max];
         var oflux = new float[max];
         var ofwhm = new float[max];
+        var oconcentration = new float[max];
         var count = 0;
         for (var r = m - 1; r >= 0 && count < max; r--) {
             var j = (int) order[r];
@@ -481,6 +505,7 @@ public final class StarDetector {
             oy[count] = sy[j];
             oflux[count] = sflux[j];
             ofwhm[count] = sfwhm[j];
+            oconcentration[count] = sconcentration[j];
             next[count] = head[gy * gw + gx];
             head[gy * gw + gx] = count;
             count++;
@@ -491,14 +516,27 @@ public final class StarDetector {
             oy[i] = (oy[i] + 0.5) * binning - 0.5;
             ofwhm[i] *= binning;
         }
-        return new StarList(Arrays.copyOf(ox, count), Arrays.copyOf(oy, count), Arrays.copyOf(oflux, count), Arrays.copyOf(ofwhm, count));
+        return new StarList(Arrays.copyOf(ox, count), Arrays.copyOf(oy, count), Arrays.copyOf(oflux, count), Arrays.copyOf(ofwhm, count),
+                Arrays.copyOf(oconcentration, count));
+    }
+
+    /** Tells if a pixel, or one of its neighbours, is as bright as the brightest pixel of the image. */
+    private boolean saturated(int px, int py) {
+        for (var y = py - 1; y <= py + 1; y++) {
+            for (var x = px - 1; x <= px + 1; x++) {
+                if (data[y * w + x] >= SATURATION * brightest) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
      * Measures the star which is around a pixel.
      *
      * @param window a window on the subtracted image, which is moved to the star
-     * @return (x, y, flux, fwhm), or null if this isn't a star
+     * @return (x, y, flux, fwhm, concentration), or null if this isn't a star
      */
     private double[] measure(int px, int py, Window window) {
         window.reset(px, py, 8);
@@ -636,6 +674,13 @@ public final class StarDetector {
         if (flux <= 0) {
             return null;
         }
-        return new double[]{cx, cy, flux, fwhm};
+        // a star with a gaussian profile has a flux of 1.13 times its peak times the square of its
+        // width: the light of an extended object is spread, and its flux is larger than that. The
+        // light of a saturated star is clipped, which spreads it too: it is taken for a star
+        var concentration = 1.13 * peak * fwhm * fwhm / flux;
+        if (saturated(mx, my)) {
+            concentration = Math.max(1, concentration);
+        }
+        return new double[]{cx, cy, flux, fwhm, concentration};
     }
 }

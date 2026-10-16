@@ -51,10 +51,14 @@ public final class PlateSolver {
     private static final int HINT_QUAD_STARS = 30;
     /** Detections wider than this number of times the size of stars aren't stars, see {@link #compactStars}. */
     private static final double EXTENDED_FWHM_FACTOR = 4;
+    /** Detections whose light is less concentrated than this, compared to a gaussian star, aren't stars. */
+    private static final double MIN_CONCENTRATION = 0.6;
     /** How much stricter the detection threshold is when an image doesn't solve, for a retry. */
     private static final double RETRY_THRESHOLD_FACTOR = 2;
     /** The number of stars of the quick searches, see {@link #stages}. */
     private static final int SHALLOW_QUAD_STARS = 32;
+    /** The quads and the verifications the deep search of the concentrated stars may try, see {@link #stages}. */
+    private static final Budget CONCENTRATED_BUDGET = new Budget(30_000, 3_000);
     /** The relative error which is tolerated on the scale found in image files. */
     private static final double HINT_SCALE_TOLERANCE = 0.25;
 
@@ -131,53 +135,103 @@ public final class PlateSolver {
     private record Stage(
             StarList list,
             int maxStars,
-            double tolerance) {
+            double tolerance,
+            Budget budget) {
+        Stage(StarList list, int maxStars, double tolerance) {
+            this(list, maxStars, tolerance, Budget.UNLIMITED);
+        }
+    }
+
+    /** What a search may try before giving up: quads, and verifications of their candidates. */
+    private record Budget(
+            long quads,
+            long verifications) {
+        static final Budget UNLIMITED = new Budget(Long.MAX_VALUE, Long.MAX_VALUE);
     }
 
     /**
      * The searches of an attempt, from the fastest to the most tolerant: each one is tried when the
      * previous ones found nothing.
      * <ol>
-     *     <li>The brightest stars which look like stars, with the strict tolerance: most images
-     *     match with a tolerance which is much smaller than what distorted images require, and
-     *     which gives far fewer false matches to verify.</li>
+     *     <li>The brightest detections which aren't too large to be stars, with the strict
+     *     tolerance: most images match with a tolerance which is much smaller than what distorted
+     *     images require, and which gives far fewer false matches to verify.</li>
      *     <li>The brightest stars, all of them: in some images the largest detections are the
-     *     brightest stars, bloated by processing, and the quads of the index are made of them.</li>
-     *     <li>The stars which look like stars, at full depth.</li>
+     *     brightest stars, bloated by processing.</li>
+     *     <li>The detections whose light is concentrated like the light of a star, at full depth
+     *     but with a budget: in images full of nebulosity, the knots of the nebula
+     *     outshine the stars, and this is where the stars are. Bright stars surrounded by
+     *     nebulosity or halos don't look concentrated, though, so the search is short in images
+     *     without knots, which solve with their brightest stars, and nearly all of them do: a
+     *     search of these concentrated stars first would cost every image a search which fails.</li>
+     *     <li>The stars which aren't too large, at full depth.</li>
      *     <li>The same, with the tolerance of the options: for images taken with short focal
      *     lengths, which have many bright stars, so it doesn't need to go as deep.</li>
      * </ol>
      */
     private static List<Stage> stages(StarList stars, SolverOptions options) {
         var compact = compactStars(stars);
+        var concentrated = concentratedStars(compact);
         var stages = new ArrayList<Stage>();
         stages.add(new Stage(compact, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
-        if (compact != stars) {
-            stages.add(new Stage(stars, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
+        stages.add(new Stage(stars, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
+        if (concentrated != compact) {
+            stages.add(new Stage(concentrated, options.maxQuadStars(), STRICT_CODE_TOLERANCE, CONCENTRATED_BUDGET));
         }
         stages.add(new Stage(compact, options.maxQuadStars(), STRICT_CODE_TOLERANCE));
         if (options.codeTolerance() > STRICT_CODE_TOLERANCE) {
             stages.add(new Stage(compact, Math.max(20, options.maxQuadStars() / 2), options.codeTolerance()));
         }
-        return stages;
+        // the lists are the same objects when nothing was left out: such stages are the same search
+        var distinct = new ArrayList<Stage>();
+        for (var stage : stages) {
+            if (!distinct.contains(stage)) {
+                distinct.add(stage);
+            }
+        }
+        return distinct;
     }
 
     /**
-     * The stars which are used to build quads at full depth: the ones which look like stars.
-     * Galaxies, nebulae and other extended objects are detected as very bright, very large
-     * "stars", especially in stretched images, and would be tried first: the quads of the index
-     * are made of point sources, so these never match. Saturated stars are larger than the
-     * others too, but much less, and they are kept. The list stays sorted by decreasing
-     * brightness.
+     * The stars which aren't too large to be stars. Galaxies, nebulae and other extended objects
+     * are detected as very bright, very large "stars", especially in stretched images, and would
+     * be tried first: the quads of the index are made of point sources, so these never match.
+     * Saturated stars are larger than the others too, but much less, and they are kept. The list
+     * stays sorted by decreasing brightness.
      *
      * @return the stars themselves when none is left out
      */
     static StarList compactStars(StarList stars) {
         var limit = EXTENDED_FWHM_FACTOR * stars.medianFwhm();
         var fwhm = stars.fwhm();
-        var kept = 0;
+        var keep = new boolean[stars.size()];
         for (var i = 0; i < stars.size(); i++) {
-            if (fwhm[i] <= limit) {
+            keep[i] = fwhm[i] <= limit;
+        }
+        return select(stars, keep);
+    }
+
+    /**
+     * The stars whose light is concentrated like the light of a star, among the ones which aren't
+     * too large: the knots of nebulae and the cores of galaxies are the size of stars in many
+     * images, but their light is spread. Saturated stars are kept by the detector.
+     *
+     * @return the stars themselves when none is left out
+     */
+    static StarList concentratedStars(StarList stars) {
+        var concentration = stars.concentration();
+        var keep = new boolean[stars.size()];
+        for (var i = 0; i < stars.size(); i++) {
+            keep[i] = concentration[i] >= MIN_CONCENTRATION;
+        }
+        return select(stars, keep);
+    }
+
+    /** The stars to keep, in order, or the list itself when all are kept, or too few would be. */
+    private static StarList select(StarList stars, boolean[] keep) {
+        var kept = 0;
+        for (var k : keep) {
+            if (k) {
                 kept++;
             }
         }
@@ -187,18 +241,20 @@ public final class PlateSolver {
         var x = new double[kept];
         var y = new double[kept];
         var flux = new float[kept];
-        var size = new float[kept];
+        var fwhm = new float[kept];
+        var concentration = new float[kept];
         var k = 0;
         for (var i = 0; i < stars.size(); i++) {
-            if (fwhm[i] <= limit) {
+            if (keep[i]) {
                 x[k] = stars.x(i);
                 y[k] = stars.y(i);
                 flux[k] = stars.flux(i);
-                size[k] = fwhm[i];
+                fwhm[k] = stars.fwhm()[i];
+                concentration[k] = stars.concentration()[i];
                 k++;
             }
         }
-        return new StarList(x, y, flux, size);
+        return new StarList(x, y, flux, fwhm, concentration);
     }
 
     /**
@@ -292,7 +348,7 @@ public final class PlateSolver {
             for (var stage : stages) {
                 var maxStars = Math.min(stage.maxStars(), o.maxQuadStars());
                 var tolerance = Math.min(stage.tolerance(), o.codeTolerance());
-                var current = new Stage(stage.list(), maxStars, tolerance);
+                var current = new Stage(stage.list(), maxStars, tolerance, stage.budget());
                 if (current.equals(previous)) {
                     // a hinted attempt searches few stars: the stages which don't differ are skipped
                     continue;
@@ -302,6 +358,8 @@ public final class PlateSolver {
                 var y = stage.list().y();
                 var search = new QuadSearch(indexes, x, y, stage.list().size(), width, height, o, epoch, maxStars, tolerance,
                         o.minScale() * Sphere.ARCSEC, o.maxScale() * Sphere.ARCSEC, hint, Math.toRadians(o.searchRadiusDeg()), deadline);
+                search.maxQuads = stage.budget().quads();
+                search.maxVerifications = stage.budget().verifications();
                 var h = search.run();
                 quads += search.quads;
                 candidates += search.candidates;

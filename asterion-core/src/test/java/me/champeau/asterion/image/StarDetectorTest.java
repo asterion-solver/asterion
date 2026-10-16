@@ -83,6 +83,10 @@ class StarDetectorTest {
         }
         var detected = StarDetector.detect(new GrayImage(width, height, data));
         assertTrue(detected.size() >= stars.length, "only " + detected.size() + " stars detected");
+        // gaussian stars: their light is concentrated as a star's
+        for (var j = 0; j < stars.length; j++) {
+            assertEquals(1, detected.concentration()[j], 0.25, "concentration of star " + j);
+        }
         for (var star : stars) {
             var best = Double.MAX_VALUE;
             for (var j = 0; j < detected.size(); j++) {
