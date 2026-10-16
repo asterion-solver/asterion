@@ -138,6 +138,42 @@ drop.addEventListener('drop', event => {
 });
 $('file').addEventListener('change', showFile);
 
+// Browsers which have the File System Access API (Chrome, Edge) remember the directory of the
+// last image picked with this identifier, from one session to the next: the picker opens there.
+// Other browsers get the file input of the page, whose directory is up to them.
+if (window.showOpenFilePicker) {
+    drop.addEventListener('click', event => {
+        event.preventDefault();
+        pickImage();
+    });
+}
+
+async function pickImage() {
+    let handles;
+    try {
+        handles = await window.showOpenFilePicker({
+            id: 'asterion-images',
+            types: [{
+                description: 'Images',
+                accept: {
+                    'image/fits': ['.fits', '.fit', '.fts', '.fz'],
+                    'image/png': ['.png'],
+                    'image/jpeg': ['.jpg', '.jpeg'],
+                    'image/tiff': ['.tif', '.tiff'],
+                    'image/bmp': ['.bmp'],
+                },
+            }],
+        });
+    } catch (e) {
+        // the picker was closed without choosing a file
+        return;
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(await handles[0].getFile());
+    $('file').files = transfer.files;
+    showFile();
+}
+
 function showFile() {
     const file = $('file').files[0];
     $('drop-text').textContent = file ? `${file.name} (${size(file.size)})` : 'Drop an image here, or click to choose one';

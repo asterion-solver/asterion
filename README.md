@@ -184,10 +184,16 @@ Open the address in a browser. `--port` changes the port (0 for any free one), `
 of the catalogs. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
 the network, without any access control.
 
+In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
+the next; other browsers decide for themselves. Dropping a file on the page works everywhere.
+
 A solution comes with two charts, north up and east left: where the image is among the constellations, with
 the name of its constellation, and the stars of the catalog around it, the ones which were matched being
 circled. The constellation lines are those of [Marc van der Sluys](https://github.com/MarcvdSluys/ConstellationLines)
 (CC BY 4.0), see [the credits of the sky data](asterion-web/third-party/sky-data.md).
+
+When the web interface runs from the archive, next to `asterion`, it offers to install the `astap` executable of
+the [ASTAP compatibility mode](#astap-compatibility-mode) there, for the programs which call ASTAP.
 
 A solution can be downloaded as a FITS image with the solution in its header (for FITS images; compressed
 ones are written uncompressed), as a FITS header alone (a `.wcs` file, like those of astrometry.net and of
