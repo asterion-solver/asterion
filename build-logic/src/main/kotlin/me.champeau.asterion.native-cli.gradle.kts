@@ -43,8 +43,11 @@ graalvmNative {
         // Native Image controls the optimization level of instrumented builds (nativeCompile --pgo-instrument)
         buildArgs.addAll(pgoInstrument.map { instrumented -> if (instrumented) listOf() else listOf("-O3") })
         buildArgs.add("-H:IncludeResources=asterion-version.txt")
+        buildArgs.add("-H:IncludeResources=asterion-executable.txt")
         // Portable binaries by default, -PnativeMarch=native to tune for the build machine
         buildArgs.add(providers.gradleProperty("nativeMarch").map { "-march=$it" }.orElse("-march=compatibility"))
+        // Options to experiment with, separated by spaces: -PnativeExtraArgs="-H:-GenLoopSafepoints --gc=epsilon"
+        buildArgs.addAll(providers.gradleProperty("nativeExtraArgs").map { it.split(" ").filter(String::isNotBlank) }.orElse(listOf()))
     }
 }
 

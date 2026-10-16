@@ -78,6 +78,7 @@ and point `GRAALVM_HOME` to it. There is no GraalVM 25.4 for macOS on Intel, whi
 ./gradlew build                 # compiles and tests
 ./gradlew nativeCompile         # builds the native executable, requires GraalVM 25
 ./gradlew nativeZip             # packages it for the current platform, with the web interface
+./gradlew :asterion-core:jmh -Pjmh.includes=Decode   # microbenchmarks of the hot loops, see asterion-core/src/jmh
 ./gradlew installDist           # JVM distribution, in asterion-cli/build/install
 ```
 
@@ -176,6 +177,12 @@ pushes that commit, as `github-actions[bot]`: `0.1.1-SNAPSHOT` after `0.1.0`, `1
 `1.0.0-rc.1`. A higher version which was set by hand, when the next release adds features for example,
 is kept. The name of the executable and of the archives is the `executableName` property of
 `gradle.properties`.
+
+Two properties help performance experiments on the native executables: `-PnativeMarch=native` tunes the code
+for the build machine (portable `compatibility` code by default), and `-PnativeExtraArgs="…"` passes other
+`native-image` options, such as `-H:-GenLoopSafepoints` or `--gc=epsilon`. Measure with fresh processes, one
+image at a time, as SharpCap or N.I.N.A. run the solver: a warm process is noticeably faster than a cold one,
+and JVM timings, even with the Graal JIT, don't transfer to the native executable.
 
 To check the release configuration locally, put archives named like the ones of the workflow in an
 `artifacts` directory and run:
