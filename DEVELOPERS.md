@@ -97,8 +97,10 @@ solver changes significantly.
 
 PNG, JPEG, TIFF and BMP images are decoded by Asterion, and must give exactly the pixels which ImageIO
 gives: the brightness of a pixel is the sum of its color channels. JPEG images are decoded like the IJG
-library which the JDK uses, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md). Color profiles are
-ignored, unlike ImageIO which applies some of them.
+library which the JDK uses, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md), and YCbCr ones
+give their luma: the decoder reads that component alone, which skips the chroma scans of progressive files,
+the upsampling and the color conversion, and must match the raw luma ImageIO gives with `readRaster`. Color
+profiles are ignored, unlike ImageIO which applies some of them.
 
 `ImageDecodersTest` checks every variant ImageIO writes, and damaged files. Two more tests take a list of
 image files, one path per line, to check real images:
