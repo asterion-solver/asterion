@@ -160,12 +160,38 @@ final class Refiner {
                     Math.sqrt(chord2) / Sphere.ARCSEC));
         }
         var rmsArcsec = Math.sqrt(sum / pairs) / Sphere.ARCSEC;
+        if (doubtful(pairs, refs, rmsArcsec / (wcs.pixelScale()), h.logOdds)) {
+            return null;
+        }
         wcs = WcsFitter.withInverse(wcs, width, height);
         var sky = wcs.pixelToSky(centerX, centerY);
         var scale = wcs.pixelScale();
         return new Solution(wcs, sky[0], sky[1], scale, wcs.rotation(), wcs.flipped(),
                 width * scale / 3600, height * scale / 3600, pairs, rmsArcsec, h.logOdds, index.name(), List.copyOf(matches));
     }
+
+    /**
+     * Tells if a solution is a false match. Images of the Moon or of planets have hundreds of
+     * "stars", among which a dense region of the catalog finds a match now and then: such
+     * solutions match few of the catalog stars of their field, with poor residuals or low odds.
+     * Real solutions match most of the catalog stars of a small field, and in a large field
+     * their residuals are small or their odds overwhelming.
+     *
+     * @param pairs the number of stars matched with the catalog
+     * @param catalogStars the number of catalog stars in the image
+     * @param rmsPixels the residuals of the matched stars, in pixels
+     * @param logOdds the odds of the hypothesis
+     */
+    static boolean doubtful(int pairs, int catalogStars, double rmsPixels, double logOdds) {
+        return pairs < DOUBTFUL_MATCHED_FRACTION * catalogStars && (rmsPixels > DOUBTFUL_RMS_PIXELS || logOdds < CONVINCING_LOG_ODDS);
+    }
+
+    /** Solutions which match a smaller share of the catalog stars of their field are false matches, unless convincing. */
+    private static final double DOUBTFUL_MATCHED_FRACTION = 0.2;
+    /** Residuals beyond this many pixels don't make a solution with few matches convincing. */
+    private static final double DOUBTFUL_RMS_PIXELS = 1.5;
+    /** Log-odds beyond which a solution with few matches is convincing anyway. */
+    private static final double CONVINCING_LOG_ODDS = 50;
 
     private Wcs rematchAndFit(Hypothesis h, Wcs wcs, double[] center, double matchRadius, int sipOrder) {
         wcs.pixelToVector(centerX, centerY, center);

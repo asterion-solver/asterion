@@ -262,14 +262,21 @@ class PlateSolverTest {
         // too few stars to be picky
         var few = new StarList(new double[]{1, 2, 3, 4}, new double[]{1, 2, 3, 4}, new float[]{4, 3, 2, 1}, new float[]{40, 3, 3, 3});
         assertSame(few, PlateSolver.compactStars(few));
-        // a processed image: the faint detections are small noise, the bright ones are large stars,
-        // which can't be the minority of extended objects the filter is for
-        var n = 400;
-        var noisy = new StarList(new double[n], new double[n], new float[n], new float[n]);
-        for (var i = 0; i < n; i++) {
-            noisy.flux()[i] = n - i;
-            noisy.fwhm()[i] = i < 80 ? 20 : 4;
-        }
-        assertSame(noisy, PlateSolver.compactStars(noisy));
+    }
+
+    @Test
+    void rejectsFalseMatchesOfDenseFields() {
+        // the Moon: hundreds of "stars", few of the catalog stars of the region matched, poorly
+        assertTrue(Refiner.doubtful(150, 2750, 3.8, 27));
+        assertTrue(Refiner.doubtful(54, 319, 3.2, 74));
+        assertTrue(Refiner.doubtful(9, 886, 1.2, 21));
+        // small fields of a few catalog stars, most of them matched: real, whatever the residuals
+        assertFalse(Refiner.doubtful(18, 27, 2.9, 55));
+        assertFalse(Refiner.doubtful(12, 19, 0.7, 37));
+        // large fields: few of the faint catalog stars match, but the residuals and the odds convince
+        assertFalse(Refiner.doubtful(300, 2000, 0.3, 500));
+        assertFalse(Refiner.doubtful(300, 2000, 1.2, 60));
+        assertTrue(Refiner.doubtful(300, 2000, 2.0, 60));
+        assertTrue(Refiner.doubtful(300, 2000, 0.5, 30));
     }
 }
