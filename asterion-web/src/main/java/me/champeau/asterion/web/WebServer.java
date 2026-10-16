@@ -87,6 +87,7 @@ public final class WebServer implements AutoCloseable {
         server.createContext("/api/solve", web.handler(web::solve));
         server.createContext("/api/stars", web.handler(web::stars));
         server.createContext("/api/download", web.handler(web::download));
+        server.createContext("/api/astap", web.handler(WebServer::astap));
         server.createContext("/", web.handler(WebServer::staticFile));
         server.start();
         return web;
@@ -181,6 +182,23 @@ public final class WebServer implements AutoCloseable {
         } finally {
             Files.deleteIfExists(file);
         }
+    }
+
+    /**
+     * The ASTAP compatible executable: GET tells if it can be installed next to this one and
+     * whether it is, POST installs it.
+     */
+    private static void astap(HttpExchange exchange) throws IOException {
+        var state = AstapBinary.detect();
+        if (exchange.getRequestMethod().equals("POST")) {
+            if (!state.available()) {
+                throw new IllegalStateException(state.reason());
+            }
+            state = AstapBinary.install(state);
+        } else {
+            expect(exchange, "GET");
+        }
+        send(exchange, 200, state.describe());
     }
 
     /** The brightest stars of a catalog around a position, for charts. */

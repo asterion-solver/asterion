@@ -13,21 +13,26 @@ application {
     applicationName = executableName
 }
 
-// The version of the project is made available to the application as a resource
-val versionFile = layout.buildDirectory.file("generated/version/asterion-version.txt")
+// The version of the project, and the name of the executable of the command line tool, are made
+// available to the applications as resources
 val writeVersion = tasks.register("writeVersion") {
     val version = providers.gradleProperty("version")
-    val output = versionFile
+    val name = executableName
+    val output = layout.buildDirectory.dir("generated/version")
     inputs.property("version", version)
-    outputs.file(output)
+    inputs.property("executableName", name)
+    outputs.dir(output)
     doLast {
-        output.get().asFile.writeText(version.get())
+        val directory = output.get().asFile
+        directory.mkdirs()
+        directory.resolve("asterion-version.txt").writeText(version.get())
+        directory.resolve("asterion-executable.txt").writeText(name)
     }
 }
 
 sourceSets {
     main {
-        resources.srcDir(writeVersion.map { it.outputs.files.singleFile.parentFile })
+        resources.srcDir(writeVersion.map { it.outputs.files.singleFile })
     }
 }
 

@@ -308,4 +308,29 @@ function downloadsView(data) {
     return view;
 }
 
+// --- the ASTAP compatible executable, when this is a native executable next to the command line one ---
+
+async function loadAstap() {
+    const data = await (await fetch('api/astap')).json();
+    const card = $('astap');
+    card.hidden = !data.available;
+    if (!data.available) return;
+    $('astap-name').textContent = data.targetName;
+    $('astap-cli').textContent = data.executableName;
+    $('astap-directory').textContent = data.directory;
+    $('astap-state').replaceChildren(element('div', data.installed
+        ? `Installed: ${data.target}${data.link ? ' (a link to ' + data.executableName + ')' : ''}`
+        : 'Not installed', data.installed ? 'status ok' : 'status'));
+    $('astap-install').textContent = (data.installed ? 'Reinstall ' : 'Install ') + data.targetName;
+}
+
+$('astap-install').addEventListener('click', async () => {
+    const response = await fetch('api/astap', {method: 'POST'});
+    if (!response.ok) {
+        alert((await response.json()).error);
+    }
+    await loadAstap();
+});
+
 loadCatalogs();
+loadAstap();

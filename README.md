@@ -152,6 +152,9 @@ ln -s "$(command -v asterion)" ~/bin/astap      # Windows: copy asterion.exe to 
 asterion astap -f image.fits -r 30 -fov 1.7     # the same mode, without renaming
 ```
 
+The [web interface](#web-interface) does it with a button: it installs `astap` (a link, or a copy on Windows)
+next to the executables of the archive.
+
 This is a **best effort** emulation, following the [specification](docs/astap-interface.md) which was
 written from the manual, the outputs of `astap_cli` and the source of N.I.N.A. and CCDciel:
 
