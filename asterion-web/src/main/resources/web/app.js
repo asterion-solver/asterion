@@ -140,18 +140,19 @@ $('file').addEventListener('change', showFile);
 
 // Browsers which have the File System Access API (Chrome, Edge) remember the directory of the
 // last image picked with this identifier, from one session to the next: the picker opens there.
-// Other browsers get the file input of the page, whose directory is up to them.
-if (window.showOpenFilePicker) {
-    drop.addEventListener('click', event => {
+// Other browsers get the file input of the page, whose directory is up to them. That API refuses
+// some files, symbolic links for one: the page then falls back to the file input.
+let usePicker = Boolean(window.showOpenFilePicker);
+drop.addEventListener('click', event => {
+    if (usePicker) {
         event.preventDefault();
         pickImage();
-    });
-}
+    }
+});
 
 async function pickImage() {
-    let handles;
     try {
-        handles = await window.showOpenFilePicker({
+        const [handle] = await window.showOpenFilePicker({
             id: 'asterion-images',
             types: [{
                 description: 'Images',
@@ -164,14 +165,19 @@ async function pickImage() {
                 },
             }],
         });
+        const transfer = new DataTransfer();
+        transfer.items.add(await handle.getFile());
+        $('file').files = transfer.files;
+        showFile();
     } catch (e) {
-        // the picker was closed without choosing a file
-        return;
+        if (e.name === 'AbortError') {
+            // the picker was closed without choosing a file
+            return;
+        }
+        // a file the picker can't open, such as a link: the standard dialog can
+        usePicker = false;
+        $('drop-text').textContent = `The browser couldn't open that file (${e.message}): click again to use the standard dialog, which can`;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(await handles[0].getFile());
-    $('file').files = transfer.files;
-    showFile();
 }
 
 function showFile() {

@@ -188,7 +188,8 @@ of the catalogs. The interface only accepts connections from the same machine; `
 the network, without any access control.
 
 In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
-the next; other browsers decide for themselves. Dropping a file on the page works everywhere.
+the next; other browsers decide for themselves. That picker refuses symbolic links: the page then offers the
+standard dialog, which opens them. Dropping a file on the page works everywhere.
 
 A solution comes with two charts, north up and east left: where the image is among the constellations, with
 the name of its constellation, and the stars of the catalog around it, the ones which were matched being
