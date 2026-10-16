@@ -181,6 +181,7 @@ function resultView(data) {
         return views;
     }
     views.push(element('div', `Solved in ${time}`, 'status ok'));
+    views.push(objectsView(data.objects || []));
     const metrics = element('div', undefined, 'metrics');
     const metric = (label, value) => {
         const m = element('div', value);
@@ -212,6 +213,28 @@ function resultView(data) {
     views.push(details);
     views.push(downloadsView(data));
     return views;
+}
+
+/** The deep sky objects of the image: "Contains M 31 (Andromeda Galaxy), M 110, M 32 and 4 more objects". */
+function objectsView(objects) {
+    const view = element('div', undefined, 'objects');
+    if (objects.length === 0) {
+        view.append(element('span', 'No catalogued deep sky object in the field', 'muted'));
+        return view;
+    }
+    const shown = objects.slice(0, 5);
+    view.append(element('span', 'Contains '));
+    shown.forEach((o, i) => {
+        const name = element('span', o.label, 'object');
+        name.title = `${o.type}, ${o.distance.toFixed(2)}° from the center` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '');
+        view.append(i > 0 ? ', ' : '', name);
+    });
+    if (objects.length > shown.length) {
+        const more = element('span', ` and ${objects.length - shown.length} more`, 'muted');
+        more.title = objects.slice(shown.length).map(o => o.label).join(', ');
+        view.append(more);
+    }
+    return view;
 }
 
 /** The files of a solution: the image with its solution, its header, the matched stars, the result. */

@@ -15,10 +15,14 @@
  */
 package me.champeau.asterion.cli;
 
+import me.champeau.asterion.catalog.DeepSkyObjects;
+import me.champeau.asterion.solver.Solution;
 import me.champeau.asterion.solver.SolveResult;
 
-import java.util.function.Consumer;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.StringJoiner;
+import java.util.function.Consumer;
 
 /** Prints the result of a solve. */
 final class Report {
@@ -44,6 +48,10 @@ final class Report {
             var fwhm = result.stars().medianFwhm();
             out.accept(Main.format("  Stars:     %d matched out of %d, RMS %.2f\" (%.2f px), FWHM %.1f\" (%.1f px)",
                     s.matchedStars(), result.stars().size(), s.rmsArcsec(), s.rmsArcsec() / s.pixelScale(), fwhm * s.pixelScale(), fwhm));
+            var objects = objects(s);
+            if (!objects.isEmpty()) {
+                out.accept("  Objects:   " + summary(objects));
+            }
         }
         if (verbose) {
             var confidence = result.solution()
@@ -54,6 +62,26 @@ final class Report {
                     stats.verifications(), confidence));
         }
     }
+
+    /** The deep sky objects of the image, the most prominent first. */
+    static List<DeepSkyObjects.InField> objects(Solution s) {
+        var width = (int) Math.round(s.fieldWidthDeg() * 3600 / s.pixelScale());
+        var height = (int) Math.round(s.fieldHeightDeg() * 3600 / s.pixelScale());
+        return DeepSkyObjects.inField(s.wcs(), width, height);
+    }
+
+    /** The first objects, and how many others there are: "M 31 (Andromeda Galaxy), M 110, M 32, and 4 more". */
+    static String summary(List<DeepSkyObjects.InField> objects) {
+        var shown = Math.min(objects.size(), MAX_OBJECTS_SHOWN);
+        var names = new StringJoiner(", ");
+        for (var i = 0; i < shown; i++) {
+            names.add(objects.get(i).object().label());
+        }
+        var more = objects.size() - shown;
+        return names + (more > 0 ? ", and " + more + " more" : "");
+    }
+
+    private static final int MAX_OBJECTS_SHOWN = 5;
 
     private static String field(double degrees) {
         return degrees >= 1 ? Main.format("%.3f°", degrees) : Main.format("%.2f'", degrees * 60);
@@ -83,6 +111,44 @@ final class Report {
             field(sb, "rmsArcsec", s.rmsArcsec());
             field(sb, "logOdds", s.logOdds());
             field(sb, "index", s.indexName());
+            sb.append("\"objects\":[");
+            var objects = objects(s);
+            for (var found : objects) {
+                var o = found.object();
+                sb.append('{');
+                field(sb, "name", o.name());
+                field(sb, "designation", o.designation());
+                if (o.messier() > 0) {
+                    field(sb, "messier", o.messier());
+                }
+                if (!o.commonName().isEmpty()) {
+                    field(sb, "commonName", o.commonName());
+                }
+                field(sb, "type", o.type().description());
+                field(sb, "ra", o.raDeg());
+                field(sb, "dec", o.decDeg());
+                field(sb, "x", found.x());
+                field(sb, "y", found.y());
+                field(sb, "distance", found.distanceDeg());
+                if (!Double.isNaN(o.majorArcmin())) {
+                    field(sb, "majorArcmin", o.majorArcmin());
+                }
+                if (!Double.isNaN(o.minorArcmin())) {
+                    field(sb, "minorArcmin", o.minorArcmin());
+                }
+                if (!Double.isNaN(o.angleDeg())) {
+                    field(sb, "angle", o.angleDeg());
+                }
+                if (!Double.isNaN(o.magnitude())) {
+                    field(sb, "magnitude", o.magnitude());
+                }
+                sb.setLength(sb.length() - 1);
+                sb.append("},");
+            }
+            if (!objects.isEmpty()) {
+                sb.setLength(sb.length() - 1);
+            }
+            sb.append("],");
             sb.append("\"wcs\":{");
             for (var card : s.wcs().toFitsKeywords().entrySet()) {
                 field(sb, card.getKey(), card.getValue());

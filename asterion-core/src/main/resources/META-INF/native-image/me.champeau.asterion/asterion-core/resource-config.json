@@ -6,6 +6,9 @@
       },
       {
         "pattern": "\\QMETA-INF/services/nom.tam.fits.compression.provider.api.ICompressorProvider\\E"
+      },
+      {
+        "pattern": "\\Qme/champeau/asterion/catalog/deep-sky-objects.bin\\E"
       }
     ]
   }

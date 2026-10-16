@@ -48,6 +48,7 @@ M33.fits: solved in 38 ms (read 17, detect 13, solve 8)
   Focal:     851 mm (3.76 µm pixels)
   Rotation:  -130.611° east of north, flipped
   Stars:     878 matched out of 1000, RMS 0.07" (0.08 px)
+  Objects:   M 33 (Triangulum Galaxy, Triangulum Pinwheel), IC 136, IC 139, IC 134, IC 140, and 12 more
 ```
 
 Useful options (see `asterion --help` for all of them):
@@ -253,7 +254,9 @@ The solver is also a Java library, which other programs can embed: see [DEVELOPE
 Apache License, version 2.0.
 
 This software is based in part on the work of the Independent JPEG Group: its JPEG decoder reproduces parts of
-the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md).
+the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md). The deep sky objects
+it names come from [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC BY-SA 4.0), see
+[third-party/openngc.md](third-party/openngc.md).
 
 This software uses data from the Tycho-2 catalogue (Høg et al., 2000) and from the European Space Agency
 mission Gaia, processed by the Gaia Data Processing and Analysis Consortium.
