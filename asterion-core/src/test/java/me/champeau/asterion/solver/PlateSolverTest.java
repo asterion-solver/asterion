@@ -34,6 +34,7 @@ import java.time.Duration;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -244,5 +245,31 @@ class PlateSolverTest {
             d += 360;
         }
         return d;
+    }
+
+    @Test
+    void buildsQuadsWithCompactStarsOnly() {
+        // a galaxy, detected as the brightest and largest "star", then stars, a saturated one first
+        var x = new double[]{100, 200, 300, 400, 500, 600};
+        var y = new double[]{100, 200, 300, 400, 500, 600};
+        var flux = new float[]{1e6f, 1e5f, 1e4f, 5e3f, 2e3f, 1e3f};
+        var fwhm = new float[]{40, 9, 3.2f, 3, 3, 2.8f};
+        var compact = PlateSolver.compactStars(new StarList(x, y, flux, fwhm));
+        assertEquals(5, compact.size());
+        assertEquals(200, compact.x(0));
+        assertEquals(1e5f, compact.flux(0));
+        assertEquals(600, compact.x(4));
+        // too few stars to be picky
+        var few = new StarList(new double[]{1, 2, 3, 4}, new double[]{1, 2, 3, 4}, new float[]{4, 3, 2, 1}, new float[]{40, 3, 3, 3});
+        assertSame(few, PlateSolver.compactStars(few));
+        // a processed image: the faint detections are small noise, the bright ones are large stars,
+        // which can't be the minority of extended objects the filter is for
+        var n = 400;
+        var noisy = new StarList(new double[n], new double[n], new float[n], new float[n]);
+        for (var i = 0; i < n; i++) {
+            noisy.flux()[i] = n - i;
+            noisy.fwhm()[i] = i < 80 ? 20 : 4;
+        }
+        assertSame(noisy, PlateSolver.compactStars(noisy));
     }
 }
