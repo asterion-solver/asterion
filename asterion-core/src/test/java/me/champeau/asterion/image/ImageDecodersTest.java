@@ -285,6 +285,63 @@ class ImageDecodersTest {
         return file;
     }
 
+    /**
+     * Large baseline JPEG files are decoded in parallel lanes, which must give the pixels of the
+     * sequential decoding whatever the data: the lanes are made tiny, so that they are many, with
+     * handoffs after a few blocks and lanes which are dropped.
+     */
+    @ParameterizedTest
+    @MethodSource("laneVariants")
+    void decodesInLanesLikeSequentially(Variant variant) throws IOException {
+        var file = write(variant);
+        var threshold = JpegDecoder.parallelThreshold;
+        var minLane = JpegDecoder.minLaneBytes;
+        try {
+            JpegDecoder.parallelThreshold = Integer.MAX_VALUE;
+            var sequential = ImageLoader.load(file, 1).image();
+            JpegDecoder.parallelThreshold = 0;
+            for (var laneBytes : new int[]{64, 1024, 16384}) {
+                JpegDecoder.minLaneBytes = laneBytes;
+                var lanes = ImageLoader.load(file, 1).image();
+                assertArrayEquals(sequential.data(), lanes.data(), 0, variant.name() + " with lanes of " + laneBytes + " bytes");
+            }
+        } finally {
+            JpegDecoder.parallelThreshold = threshold;
+            JpegDecoder.minLaneBytes = minLane;
+        }
+    }
+
+    static List<Variant> laneVariants() {
+        var variants = new ArrayList<Variant>();
+        var width = 640;
+        var height = 480;
+        for (var type : new int[]{BufferedImage.TYPE_3BYTE_BGR, BufferedImage.TYPE_BYTE_GRAY}) {
+            // noise makes the data of the blocks long and varied, like the stars and the nebulae of real images
+            var image = new BufferedImage(width, height, type);
+            var raster = image.getRaster();
+            var random = new Random(7);
+            for (var y = 0; y < height; y++) {
+                for (var x = 0; x < width; x++) {
+                    for (var c = 0; c < raster.getNumBands(); c++) {
+                        var v = 60 + 40 * Math.sin(x / 20.0) * Math.cos(y / 30.0) + 30 * random.nextGaussian() + (x * y % 97 < 3 ? 150 : 0);
+                        raster.setSample(x, y, c, Math.clamp(Math.round(v), 0, 255));
+                    }
+                }
+            }
+            var name = type == BufferedImage.TYPE_BYTE_GRAY ? "gray" : "rgb";
+            for (var quality : new float[]{0.5f, 0.95f}) {
+                variants.add(variant("lanes " + name + " " + quality, image, "jpeg", jpegQuality(quality)));
+            }
+            if (type == BufferedImage.TYPE_3BYTE_BGR) {
+                for (var sampling : new int[][]{{1, 1}, {2, 1}, {2, 2}}) {
+                    variants.add(new Variant("lanes rgb sampling " + sampling[0] + "x" + sampling[1], image, "jpeg", jpegQuality(0.9f),
+                            tree -> setSampling(tree, sampling[0], sampling[1])));
+                }
+            }
+        }
+        return variants;
+    }
+
     @ParameterizedTest
     @MethodSource("variants")
     void decodesLikeImageIo(Variant variant) throws IOException {

@@ -15,6 +15,8 @@
  */
 package me.champeau.asterion.image;
 
+import java.util.stream.IntStream;
+
 /**
  * Builds a gray image from the rows of a decoded image, binning them on the fly so that the full
  * resolution image is never in memory. Rows must be given in order.
@@ -99,6 +101,43 @@ final class GrayBinner {
                 out[offset + x] += sum;
             }
         }
+    }
+
+    /**
+     * Bins a whole image of 8-bit samples, in parallel: the sums are exact whatever their order,
+     * so the pixels are the ones {@link #row} gives.
+     *
+     * @param samples the samples, row after row
+     * @param stride the distance between the rows, in samples
+     */
+    void samples(byte[] samples, int stride) {
+        if (nextRow != 0) {
+            throw new IllegalStateException("Rows were added already");
+        }
+        IntStream.range(0, binnedHeight).parallel().forEach(by -> {
+            var offset = by * binnedWidth;
+            for (var y = by * binning; y < (by + 1) * binning; y++) {
+                var row = y * stride;
+                if (binning == 1) {
+                    for (var x = 0; x < binnedWidth; x++) {
+                        out[offset + x] += samples[row + x] & 0xFF;
+                    }
+                } else if (binning == 2) {
+                    for (var x = 0; x < binnedWidth; x++) {
+                        out[offset + x] += (samples[row + 2 * x] & 0xFF) + (samples[row + 2 * x + 1] & 0xFF);
+                    }
+                } else {
+                    for (var x = 0; x < binnedWidth; x++) {
+                        var sum = 0;
+                        for (var sx = row + x * binning; sx < row + (x + 1) * binning; sx++) {
+                            sum += samples[sx] & 0xFF;
+                        }
+                        out[offset + x] += sum;
+                    }
+                }
+            }
+        });
+        nextRow = height;
     }
 
     GrayImage image() {

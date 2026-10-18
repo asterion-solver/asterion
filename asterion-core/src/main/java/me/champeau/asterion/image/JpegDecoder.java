@@ -16,6 +16,11 @@
 package me.champeau.asterion.image;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
+import java.util.Arrays;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
 
 /**
@@ -65,6 +70,21 @@ final class JpegDecoder {
         return (int) (x * (1 << SCALEBITS) + 0.5);
     }
 
+    /** Scans with at least this many bytes of data are decoded in parallel lanes, see {@link Lane}; tests lower it. */
+    static int parallelThreshold = 1 << 20;
+    /** The data of a lane, at least: lanes need thousands of blocks to be worth their probing and handoff; tests lower it. */
+    static int minLaneBytes = 1 << 18;
+    /** How many blocks the probe of a phase decodes before the phase is believed. */
+    private static final int PROBE_BLOCKS = 64;
+    /** How many blocks the probes of phases which all survive decode before giving up telling them apart. */
+    private static final int MAX_PROBE_BLOCKS = 4096;
+    /** A phase, as a position in the MCU, whose tables are those of another phase: probing one is probing the other. */
+    private static final int SAME_AS_EARLIER = -1;
+    /** How many consecutive block boundaries two lanes must share for a handoff, in MCUs. */
+    private static final int HANDOFF_MCUS = 2;
+    /** The blocks a lane decodes after reaching the end of the data, for the ones its buffer still holds. */
+    private static final int BLOCKS_AFTER_END = 8;
+
     private final byte[] data;
     /** True when only the brightness of the pixels is needed: the chroma of YCbCr images isn't decoded. */
     private final boolean brightnessOnly;
@@ -87,10 +107,9 @@ final class JpegDecoder {
     private int adobeTransform = -1;
     private boolean scanned;
     private int eobRun;
+    /** The reader of the entropy-coded data of the scan which is decoded. */
+    private BitReader in;
     // the bit reader of the entropy-coded data
-    private int bitBuffer;
-    private int bitCount;
-    private boolean markerFound;
 
     private JpegDecoder(byte[] data, boolean brightnessOnly) {
         this.data = data;
@@ -110,7 +129,14 @@ final class JpegDecoder {
             var decoder = new JpegDecoder(data, true);
             decoder.readMarkers();
             var binner = new GrayBinner(decoder.width, decoder.height, binning);
-            decoder.decodeRows(decoder.rgb(), binner::row);
+            if (decoder.lumaOnly) {
+                // the luma is the brightness: the binner reads its samples directly
+                decoder.transform();
+                var luma = decoder.components[0];
+                binner.samples(luma.samples, luma.blocksPerLine * 8);
+            } else {
+                decoder.decodeRows(decoder.rgb(), binner::row);
+            }
             return binner.image();
         } catch (RuntimeException e) {
             throw new IOException("Invalid JPEG file: " + e, e);
@@ -165,7 +191,10 @@ final class JpegDecoder {
         int acTable;
         int blocksPerLine;
         int blocksPerColumn;
-        /** The coefficients of all the blocks, 64 per block, in natural order; a single block when the component is skipped. */
+        /**
+         * The coefficients of all the blocks, 64 per block, in natural order; a single block when
+         * the component is skipped, and none when the blocks were transformed as they were decoded.
+         */
         short[] coefficients;
         /** True if the component isn't decoded: its blocks are parsed when a scan interleaves them, and dropped. */
         boolean skipped;
@@ -337,7 +366,9 @@ final class JpegDecoder {
             c.blocksPerLine = mcusX * c.h;
             c.blocksPerColumn = mcusY * c.v;
             c.skipped = lumaOnly && i > 0;
-            c.coefficients = new short[c.skipped ? 64 : c.blocksPerLine * c.blocksPerColumn * 64];
+            if (c.skipped) {
+                c.coefficients = new short[64];
+            }
         }
         position = end;
     }
@@ -454,9 +485,7 @@ final class JpegDecoder {
     }
 
     private void decodeScan(Component[] scan, int ss, int se, int ah, int al) throws IOException {
-        bitBuffer = 0;
-        bitCount = 0;
-        markerFound = false;
+        in = new BitReader(data, position);
         eobRun = 0;
         for (var c : scan) {
             c.predictor = 0;
@@ -472,6 +501,16 @@ final class JpegDecoder {
         } else {
             unitsPerLine = mcusX;
             totalMcus = mcusX * mcusY;
+        }
+        if (!progressive && restartInterval == 0 && data.length - position >= parallelThreshold
+                && ForkJoinPool.getCommonPoolParallelism() > 1
+                && decodeInLanes(scan, unitsPerLine, totalMcus)) {
+            return;
+        }
+        for (var c : scan) {
+            if (c.coefficients == null) {
+                c.coefficients = new short[c.blocksPerLine * c.blocksPerColumn * 64];
+            }
         }
         var restarts = restartInterval;
         var untilRestart = restarts;
@@ -506,26 +545,12 @@ final class JpegDecoder {
             mcuCol++;
         }
         // the entropy-coded data ends at the next marker: when the bit reader found it, it's read again
-        if (markerFound) {
-            position -= 2;
-        }
+        position = in.markerFound ? in.position - 2 : in.position;
     }
 
     /** Moves to the data which follows a restart marker, with a fresh state. */
     private void restart(Component[] scan) {
-        if (markerFound) {
-            // the bit reader stopped right after the marker
-            markerFound = false;
-        } else {
-            // the padding bits before the marker
-            while (position < data.length - 1 && !((data[position] & 0xFF) == 0xFF && (data[position + 1] & 0xFF) >= 0xD0
-                    && (data[position + 1] & 0xFF) <= 0xD7)) {
-                position++;
-            }
-            position += 2;
-        }
-        bitBuffer = 0;
-        bitCount = 0;
+        in.restart();
         eobRun = 0;
         for (var c : scan) {
             c.predictor = 0;
@@ -540,7 +565,7 @@ final class JpegDecoder {
                 var diff = decodeDc(c);
                 c.predictor += diff;
                 c.coefficients[offset] = (short) (c.predictor << al);
-            } else if (bit() != 0) {
+            } else if (in.bit() != 0) {
                 c.coefficients[offset] |= (short) (1 << al);
             }
         } else if (ah == 0) {
@@ -555,20 +580,33 @@ final class JpegDecoder {
         if (table == null) {
             throw new IOException("Missing JPEG Huffman table");
         }
-        var s = decodeHuffman(table);
-        return s == 0 ? 0 : extend(bits(s), s);
+        return decodeDc(in, table);
+    }
+
+    /** @return the difference between the DC coefficient of a block and the one of the previous block */
+    private static int decodeDc(BitReader in, HuffmanTable table) {
+        var s = in.decodeHuffman(table);
+        return s == 0 ? 0 : extend(in.bits(s), s);
     }
 
     private void decodeBaseline(Component c, int offset) throws IOException {
-        var coefficients = c.coefficients;
-        c.predictor += decodeDc(c);
-        coefficients[offset] = (short) c.predictor;
-        var table = acTables[c.acTable];
-        if (table == null) {
+        var dc = dcTables[c.dcTable];
+        var ac = acTables[c.acTable];
+        if (dc == null || ac == null) {
             throw new IOException("Missing JPEG Huffman table");
         }
+        c.predictor += decodeBaseline(in, dc, ac, c.coefficients, offset);
+        c.coefficients[offset] = (short) c.predictor;
+    }
+
+    /**
+     * Decodes the AC coefficients of a block of a baseline scan, and returns the difference of
+     * its DC coefficient with the one of the previous block of its component.
+     */
+    private static int decodeBaseline(BitReader in, HuffmanTable dc, HuffmanTable ac, short[] coefficients, int offset) {
+        var diff = decodeDc(in, dc);
         for (var k = 1; k < 64; k++) {
-            var rs = decodeHuffman(table);
+            var rs = in.decodeHuffman(ac);
             var r = rs >> 4;
             var s = rs & 15;
             if (s == 0) {
@@ -579,8 +617,13 @@ final class JpegDecoder {
                 continue;
             }
             k += r;
-            coefficients[offset + ZIGZAG[k]] = (short) extend(bits(s), s);
+            if (k > 63) {
+                // a run past the end of the block: tolerated like libjpeg, but not what a right decoding gives
+                in.corrupt = true;
+            }
+            coefficients[offset + ZIGZAG[k]] = (short) extend(in.bits(s), s);
         }
+        return diff;
     }
 
     private void decodeAcFirst(Component c, int offset, int ss, int se, int al) throws IOException {
@@ -590,14 +633,14 @@ final class JpegDecoder {
         }
         var table = acTables[c.acTable];
         for (var k = ss; k <= se; k++) {
-            var rs = decodeHuffman(table);
+            var rs = in.decodeHuffman(table);
             var r = rs >> 4;
             var s = rs & 15;
             if (s == 0) {
                 if (r < 15) {
                     eobRun = (1 << r) - 1;
                     if (r > 0) {
-                        eobRun += bits(r);
+                        eobRun += in.bits(r);
                     }
                     break;
                 }
@@ -605,7 +648,7 @@ final class JpegDecoder {
                 continue;
             }
             k += r;
-            c.coefficients[offset + ZIGZAG[k]] = (short) (extend(bits(s), s) * (1 << al));
+            c.coefficients[offset + ZIGZAG[k]] = (short) (extend(in.bits(s), s) * (1 << al));
         }
     }
 
@@ -617,22 +660,22 @@ final class JpegDecoder {
         var k = ss;
         if (eobRun == 0) {
             for (; k <= se; k++) {
-                var rs = decodeHuffman(table);
+                var rs = in.decodeHuffman(table);
                 var r = rs >> 4;
                 var s = rs & 15;
                 if (s != 0) {
-                    s = bit() != 0 ? p1 : m1;
+                    s = in.bit() != 0 ? p1 : m1;
                 } else if (r != 15) {
                     eobRun = 1 << r;
                     if (r > 0) {
-                        eobRun += bits(r);
+                        eobRun += in.bits(r);
                     }
                     break;
                 }
                 do {
                     var index = offset + ZIGZAG[k];
                     if (coefficients[index] != 0) {
-                        if (bit() != 0 && (coefficients[index] & p1) == 0) {
+                        if (in.bit() != 0 && (coefficients[index] & p1) == 0) {
                             coefficients[index] += (short) (coefficients[index] >= 0 ? p1 : m1);
                         }
                     } else {
@@ -650,7 +693,7 @@ final class JpegDecoder {
         if (eobRun > 0) {
             for (; k <= se; k++) {
                 var index = offset + ZIGZAG[k];
-                if (coefficients[index] != 0 && bit() != 0 && (coefficients[index] & p1) == 0) {
+                if (coefficients[index] != 0 && in.bit() != 0 && (coefficients[index] & p1) == 0) {
                     coefficients[index] += (short) (coefficients[index] >= 0 ? p1 : m1);
                 }
             }
@@ -662,68 +705,516 @@ final class JpegDecoder {
         return v < 1 << (s - 1) ? v - (1 << s) + 1 : v;
     }
 
-    /** Fills the bit buffer to at least 25 bits: after a marker, with zeros, like libjpeg. */
-    private void fill() {
-        while (bitCount <= 24) {
-            var b = 0;
-            if (!markerFound && position < data.length) {
-                b = data[position++] & 0xFF;
-                if (b == 0xFF) {
-                    var next = position < data.length ? data[position] & 0xFF : 0xD9;
-                    if (next == 0) {
-                        position++;
-                    } else {
-                        while (next == 0xFF && position < data.length - 1) {
-                            next = data[++position] & 0xFF;
+    /**
+     * Reads the bits of the entropy-coded data of a scan: the bytes of stuffing which follow the
+     * 0xFF bytes of the data are removed, and the data ends at a marker, which zeros follow, like
+     * libjpeg. The bits which were read and not consumed yet are kept in a word, the first one in
+     * the most significant bit.
+     */
+    static final class BitReader {
+        private static final VarHandle LONG = MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.BIG_ENDIAN);
+        private final byte[] data;
+        int position;
+        private long bitBuffer;
+        private int bitCount;
+        boolean markerFound;
+        /**
+         * True when a code which isn't in its table was read, or a run of coefficients went past the
+         * end of a block: what the data of a scan read from the wrong position gives, see {@link Lane}.
+         */
+        boolean corrupt;
+
+        BitReader(byte[] data, int position) {
+            this.data = data;
+            this.position = position;
+        }
+
+        /**
+         * The position of the next bit, counted from the start of the data, bytes of stuffing
+         * included: a position identifies a place in the data, whatever was read before.
+         */
+        long bitPosition() {
+            return (long) position * 8 - bitCount;
+        }
+
+        /** Moves to the data which follows a restart marker, with a fresh state. */
+        void restart() {
+            if (markerFound) {
+                // the reader stopped right after the marker
+                markerFound = false;
+            } else {
+                // the padding bits before the marker
+                while (position < data.length - 1 && !((data[position] & 0xFF) == 0xFF && (data[position + 1] & 0xFF) >= 0xD0
+                        && (data[position + 1] & 0xFF) <= 0xD7)) {
+                    position++;
+                }
+                position += 2;
+            }
+            bitBuffer = 0;
+            bitCount = 0;
+        }
+
+        /** Fills the buffer to at least 57 bits. */
+        private void fill() {
+            if (!markerFound && position + 8 <= data.length) {
+                // the next 8 bytes, when none is 0xFF, are data: whole bytes fill the buffer at once
+                var v = (long) LONG.get(data, position);
+                var x = ~v;
+                if (((x - 0x0101010101010101L) & ~x & 0x8080808080808080L) == 0) {
+                    var bytes = (64 - bitCount) >>> 3;
+                    bitBuffer |= (v & (-1L << (64 - 8 * bytes))) >>> bitCount;
+                    bitCount += 8 * bytes;
+                    position += bytes;
+                    return;
+                }
+            }
+            while (bitCount <= 56) {
+                var b = 0;
+                if (!markerFound && position < data.length) {
+                    b = data[position++] & 0xFF;
+                    if (b == 0xFF) {
+                        var next = position < data.length ? data[position] & 0xFF : 0xD9;
+                        if (next == 0) {
+                            position++;
+                        } else {
+                            while (next == 0xFF && position < data.length - 1) {
+                                next = data[++position] & 0xFF;
+                            }
+                            position++;
+                            markerFound = true;
+                            b = 0;
                         }
-                        position++;
-                        markerFound = true;
-                        b = 0;
+                    }
+                }
+                bitBuffer |= (long) b << (56 - bitCount);
+                bitCount += 8;
+            }
+        }
+
+        int bit() {
+            return bits(1);
+        }
+
+        int bits(int n) {
+            if (n == 0) {
+                return 0;
+            }
+            if (bitCount < n) {
+                fill();
+            }
+            var v = (int) (bitBuffer >>> (64 - n));
+            bitBuffer <<= n;
+            bitCount -= n;
+            return v;
+        }
+
+        int decodeHuffman(HuffmanTable table) {
+            if (bitCount < 16) {
+                fill();
+            }
+            var entry = table.lookup[(int) (bitBuffer >>> (64 - 9))];
+            if (entry != 0) {
+                var length = entry & 0xFF;
+                bitBuffer <<= length;
+                bitCount -= length;
+                return entry >> 8;
+            }
+            // longer codes: compared with the largest code of each length, like libjpeg
+            for (var length = 10; length <= 16; length++) {
+                var code = (int) (bitBuffer >>> (64 - length));
+                if (code <= table.maxCode[length]) {
+                    bitBuffer <<= length;
+                    bitCount -= length;
+                    return table.values[table.valueOffset[length] + code];
+                }
+            }
+            // a corrupt code: libjpeg returns 0 too
+            corrupt = true;
+            return 0;
+        }
+    }
+
+    /**
+     * A part of the entropy-coded data of a baseline scan, decoded on its own: the data has no
+     * restart markers, so no part but the first starts at a known place. A lane starts at a byte
+     * of its choosing and decodes blocks from there: a Huffman code resynchronizes within a few
+     * blocks, and the component of the first block, which selects the tables, is found by trying
+     * each one, as the wrong tables give corrupt blocks almost at once. The lane then decodes its
+     * part, and goes on into the next part until its block boundaries coincide with the ones found
+     * by the next lane, which is where the next lane takes over. The DC coefficients, which are
+     * coded as differences, are kept as such until the lanes are put together, when the ones of
+     * the previous lanes are known.
+     */
+    private static final class Lane {
+        final BitReader in;
+        /** The part of the data: the lane starts at {@code start}, and decodes beyond {@code end} until a handoff. */
+        final int start;
+        final int end;
+        /** The component of the first block, as the position in the pattern of blocks of an MCU, as found by probing. */
+        int phase;
+        /** The coefficients of the decoded blocks, 64 per block, the DC one being the difference with the previous block. */
+        short[] coefficients;
+        /** Where each block starts, see {@link BitReader#bitPosition()}. */
+        long[] starts;
+        int count;
+        /** The sums of the DC differences of the decoded blocks, by the position in the MCU the lane assumes. */
+        final long[] sums;
+        /** The blocks the lane contributes: from the handoff of the previous lane to the one of the next. */
+        int validFrom;
+        int validTo;
+        /** The index of the first valid block, in the scan. */
+        long base;
+        /** True when no phase decodes the data: the previous lane decodes this part. */
+        boolean dead;
+
+        /** The blocks the buffers are made for, when they are made: on the thread of the lane. */
+        private final int capacity;
+
+        Lane(byte[] data, int start, int end, int capacity, int period) {
+            this.in = new BitReader(data, start);
+            this.start = start;
+            this.end = end;
+            this.capacity = capacity;
+            sums = new long[period];
+        }
+
+        private void allocate() {
+            coefficients = new short[capacity * 64];
+            starts = new long[capacity];
+        }
+
+        private void grow() {
+            var capacity = Math.max(1024, count * 2);
+            coefficients = Arrays.copyOf(coefficients, capacity * 64);
+            starts = Arrays.copyOf(starts, capacity);
+        }
+    }
+
+    /**
+     * Decodes the blocks of a baseline scan in parallel lanes, see {@link Lane}.
+     *
+     * @return false if the data couldn't be decoded in lanes: it is decoded sequentially
+     */
+    private boolean decodeInLanes(Component[] scan, int unitsPerLine, int totalMcus) throws IOException {
+        // the blocks of an MCU, in order: the component, and the position of the block in it
+        var single = scan.length == 1;
+        var blocksPerMcu = 0;
+        for (var c : scan) {
+            blocksPerMcu += single ? 1 : c.h * c.v;
+            if (dcTables[c.dcTable] == null || acTables[c.acTable] == null) {
+                throw new IOException("Missing JPEG Huffman table");
+            }
+        }
+        var period = blocksPerMcu;
+        var pattern = new int[period];
+        var patternH = new int[period];
+        var patternV = new int[period];
+        var q = 0;
+        for (var k = 0; k < scan.length; k++) {
+            var c = scan[k];
+            for (var v = 0; v < (single ? 1 : c.v); v++) {
+                for (var h = 0; h < (single ? 1 : c.h); h++) {
+                    pattern[q] = k;
+                    patternH[q] = h;
+                    patternV[q] = v;
+                    q++;
+                }
+            }
+        }
+        var totalBlocks = (long) totalMcus * period;
+        var length = data.length - position;
+        var laneCount = Math.min(ForkJoinPool.getCommonPoolParallelism() + 1, length / minLaneBytes);
+        if (laneCount < 2) {
+            return false;
+        }
+        var lanes = new Lane[laneCount];
+        // the blocks of a lane, about: the ones of its share of the data, and the blocks of the handoff
+        var estimated = (int) Math.min(Integer.MAX_VALUE / 64, totalBlocks / laneCount + totalBlocks / (8 * laneCount) + 1024);
+        for (var i = 0; i < laneCount; i++) {
+            var start = position + (int) ((long) length * i / laneCount);
+            var end = position + (int) ((long) length * (i + 1) / laneCount);
+            lanes[i] = new Lane(data, start, end, estimated, period);
+        }
+        var dc = new HuffmanTable[period];
+        var ac = new HuffmanTable[period];
+        for (var t = 0; t < period; t++) {
+            dc[t] = dcTables[scan[pattern[t]].dcTable];
+            ac[t] = acTables[scan[pattern[t]].acTable];
+        }
+        // the phases whose tables are the ones of an earlier phase, in the same order, decode the
+        // same blocks: probing one is probing the other, and no probing is needed when all do
+        var phases = new int[period];
+        for (var phase = 0; phase < period; phase++) {
+            for (var earlier = 0; earlier < phase && phases[phase] != SAME_AS_EARLIER; earlier++) {
+                var same = phases[earlier] != SAME_AS_EARLIER;
+                for (var t = 0; t < period && same; t++) {
+                    same = dc[(phase + t) % period] == dc[(earlier + t) % period] && ac[(phase + t) % period] == ac[(earlier + t) % period];
+                }
+                if (same) {
+                    phases[phase] = SAME_AS_EARLIER;
+                }
+            }
+        }
+        // each lane decodes its part, then goes on until the handoff to the next lane
+        IntStream.range(0, laneCount).parallel().forEach(i -> probe(lanes[i], i == 0, phases, dc, ac, period, totalBlocks));
+        IntStream.range(0, laneCount).parallel().forEach(i -> decodePart(lanes[i], dc, ac, period, totalBlocks));
+        IntStream.range(0, laneCount).parallel().forEach(i -> handOff(lanes, i, dc, ac, period, totalBlocks));
+        // the blocks of the lanes, put together: the last lanes may have been decoded by a previous one
+        var blocks = 0L;
+        for (var lane : lanes) {
+            if (lane.dead || lane.validTo < 0) {
+                lane.validFrom = 0;
+                lane.validTo = 0;
+            }
+            lane.base = blocks;
+            blocks += lane.validTo - lane.validFrom;
+        }
+        if (blocks < totalBlocks) {
+            // damaged or truncated data: decoded sequentially, which handles it like libjpeg
+            return false;
+        }
+        // the DC coefficients are coded as differences: the ones of the blocks of each lane are
+        // summed by component, which gives the predictor each lane starts with. A lane summed the
+        // blocks it decoded by the position in the MCU it assumed: the blocks it doesn't
+        // contribute are taken out, and the positions are mapped to the true ones
+        var sums = new int[laneCount][scan.length];
+        for (var i = 0; i < laneCount; i++) {
+            var lane = lanes[i];
+            if (lane.validTo == lane.validFrom) {
+                continue;
+            }
+            var byPhase = lane.sums.clone();
+            for (var b = 0; b < lane.validFrom; b++) {
+                byPhase[(lane.phase + b) % period] -= lane.coefficients[b * 64];
+            }
+            for (var b = lane.validTo; b < lane.count; b++) {
+                byPhase[(lane.phase + b) % period] -= lane.coefficients[b * 64];
+            }
+            var shift = (int) Math.floorMod(lane.base - lane.validFrom - lane.phase, (long) period);
+            for (var t = 0; t < period; t++) {
+                sums[i][pattern[(t + shift) % period]] += (int) byPhase[t];
+            }
+        }
+        for (var i = 1; i < laneCount; i++) {
+            for (var k = 0; k < scan.length; k++) {
+                sums[i][k] += sums[i - 1][k];
+            }
+        }
+        // the blocks are transformed into samples from the buffers of the lanes, with their DC
+        // coefficients made whole: the coefficients of the components are never stored
+        for (var c : scan) {
+            if (!c.skipped) {
+                c.samples = new byte[c.blocksPerLine * 8 * c.blocksPerColumn * 8];
+                c.coefficients = null;
+            }
+        }
+        IntStream.range(0, laneCount).parallel().forEach(i -> {
+            var lane = lanes[i];
+            var predictors = i == 0 ? new int[scan.length] : sums[i - 1].clone();
+            var kept = Math.min(lane.validTo - lane.validFrom, totalBlocks - lane.base);
+            var phase = (int) (lane.base % period);
+            var mcu = (int) (lane.base / period);
+            var mcuRow = mcu / unitsPerLine;
+            var mcuCol = mcu % unitsPerLine;
+            var workspace = new int[64];
+            for (var b = lane.validFrom; b < lane.validFrom + kept; b++) {
+                var k = pattern[phase];
+                var c = scan[k];
+                predictors[k] += lane.coefficients[b * 64];
+                if (!c.skipped) {
+                    var blockRow = single ? mcuRow : mcuRow * c.v + patternV[phase];
+                    var blockCol = single ? mcuCol : mcuCol * c.h + patternH[phase];
+                    var stride = c.blocksPerLine * 8;
+                    lane.coefficients[b * 64] = (short) predictors[k];
+                    idct(lane.coefficients, b * 64, c.quant, workspace, c.samples, blockRow * 8 * stride + blockCol * 8, stride);
+                }
+                if (++phase == period) {
+                    phase = 0;
+                    if (++mcuCol == unitsPerLine) {
+                        mcuCol = 0;
+                        mcuRow++;
                     }
                 }
             }
-            bitBuffer |= b << (24 - bitCount);
-            bitCount += 8;
+        });
+        for (var c : scan) {
+            c.predictor = 0;
         }
-    }
-
-    private int bit() {
-        return bits(1);
-    }
-
-    private int bits(int n) {
-        if (n == 0) {
-            return 0;
-        }
-        if (bitCount < n) {
-            fill();
-        }
-        var v = bitBuffer >>> (32 - n);
-        bitBuffer <<= n;
-        bitCount -= n;
-        return v;
-    }
-
-    private int decodeHuffman(HuffmanTable table) throws IOException {
-        if (bitCount < 16) {
-            fill();
-        }
-        var entry = table.lookup[bitBuffer >>> (32 - 9)];
-        if (entry != 0) {
-            var length = entry & 0xFF;
-            bitBuffer <<= length;
-            bitCount -= length;
-            return entry >> 8;
-        }
-        var code = 0;
-        for (var length = 1; length <= 16; length++) {
-            code = (code << 1) | bit();
-            if (code <= table.maxCode[length]) {
-                return table.values[table.valueOffset[length] + code];
+        // the data ends where the last lane which decoded stopped
+        var last = lanes[0];
+        for (var lane : lanes) {
+            if (lane.validTo > lane.validFrom) {
+                last = lane;
             }
         }
-        // a corrupt code: libjpeg returns 0 too
-        return 0;
+        position = last.in.markerFound ? last.in.position - 2 : last.in.position;
+        return true;
+    }
+
+    /** Decodes a block, and returns false when it's corrupt or past the end of the data for a while. */
+    private static boolean decodeBlock(Lane lane, HuffmanTable[] dc, HuffmanTable[] ac, int period, long totalBlocks) {
+        if (lane.count == lane.starts.length) {
+            lane.grow();
+        }
+        var q = (lane.phase + lane.count) % period;
+        lane.starts[lane.count] = lane.in.bitPosition();
+        var offset = lane.count * 64;
+        var diff = decodeBaseline(lane.in, dc[q], ac[q], lane.coefficients, offset);
+        lane.coefficients[offset] = (short) diff;
+        lane.sums[q] += diff;
+        lane.count++;
+        return !lane.in.corrupt && lane.count <= totalBlocks + period;
+    }
+
+    /** Finds the phase of a lane: the position in the MCU of the block its data starts with. */
+    private static void probe(Lane lane, boolean first, int[] phases, HuffmanTable[] dc, HuffmanTable[] ac, int period, long totalBlocks) {
+        lane.allocate();
+        if (first) {
+            return;
+        }
+        var probes = new Lane[period];
+        var alive = 0;
+        for (var phase = 0; phase < period; phase++) {
+            if (phases[phase] != SAME_AS_EARLIER) {
+                probes[phase] = new Lane(lane.in.data, lane.start, lane.end, MAX_PROBE_BLOCKS + 1, period);
+                probes[phase].phase = phase;
+                probes[phase].allocate();
+                alive++;
+            }
+        }
+        // the phases are tried a few blocks at a time, until one is left: with the wrong tables,
+        // the data is corrupt almost at once, but a smooth image has few codes which can be wrong
+        for (var blocks = PROBE_BLOCKS; alive > 1 && blocks <= MAX_PROBE_BLOCKS; blocks *= 4) {
+            for (var phase = 0; phase < period; phase++) {
+                var probe = probes[phase];
+                if (probe == null) {
+                    continue;
+                }
+                var ok = true;
+                while (ok && probe.count < blocks && !probe.in.markerFound) {
+                    ok = decodeBlock(probe, dc, ac, period, totalBlocks);
+                }
+                if (!ok) {
+                    probes[phase] = null;
+                    alive--;
+                }
+            }
+        }
+        if (alive == 1) {
+            // the single survivor is the phase, probed or not: the only one when all share their tables
+            for (var phase = 0; phase < period; phase++) {
+                if (probes[phase] != null) {
+                    lane.phase = phase;
+                    return;
+                }
+            }
+        }
+        for (var phase = 0; phase < period; phase++) {
+            if (probes[phase] != null) {
+                var probe = probes[phase];
+                var ok = true;
+                while (ok && probe.count < PROBE_BLOCKS && !probe.in.markerFound) {
+                    ok = decodeBlock(probe, dc, ac, period, totalBlocks);
+                }
+                if (ok) {
+                    lane.phase = phase;
+                    return;
+                }
+            }
+        }
+        lane.dead = true;
+    }
+
+    /** Decodes the part of a lane, up to the block which crosses its end. */
+    private static void decodePart(Lane lane, HuffmanTable[] dc, HuffmanTable[] ac, int period, long totalBlocks) {
+        if (lane.dead) {
+            return;
+        }
+        var afterEnd = 0;
+        while (lane.in.bitPosition() < (long) lane.end * 8) {
+            if (!decodeBlock(lane, dc, ac, period, totalBlocks)) {
+                if (lane.in.markerFound) {
+                    // the zeros which follow the end of the data: the blocks are over
+                    break;
+                }
+                // the lane went wrong: what it decoded is dropped, the previous lane decodes its part
+                lane.dead = true;
+                return;
+            }
+            if (lane.in.markerFound && ++afterEnd > BLOCKS_AFTER_END) {
+                break;
+            }
+        }
+        lane.validTo = lane.in.markerFound ? lane.count : -1;
+    }
+
+    /**
+     * Goes on decoding after the end of the part of a lane, until its block boundaries coincide
+     * with the ones of a next lane, which takes over from there, or until the end of the data.
+     */
+    private static void handOff(Lane[] lanes, int i, HuffmanTable[] dc, HuffmanTable[] ac, int period, long totalBlocks) {
+        var lane = lanes[i];
+        if (lane.dead || lane.validTo >= 0) {
+            return;
+        }
+        var required = HANDOFF_MCUS * period;
+        var afterEnd = 0;
+        var n = i + 1;
+        var j = 0;
+        var run = 0;
+        while (true) {
+            if (lane.in.markerFound && ++afterEnd > BLOCKS_AFTER_END) {
+                // the end of the data: this lane decoded everything which was left
+                lane.validTo = lane.count;
+                return;
+            }
+            if (!decodeBlock(lane, dc, ac, period, totalBlocks)) {
+                if (lane.in.markerFound) {
+                    lane.validTo = lane.count;
+                } else {
+                    lane.dead = true;
+                }
+                return;
+            }
+            var at = lane.starts[lane.count - 1];
+            while (n < lanes.length) {
+                var next = lanes[n];
+                if (next.dead) {
+                    n++;
+                    j = 0;
+                    run = 0;
+                    continue;
+                }
+                var from = j;
+                while (j < next.count && next.starts[j] < at) {
+                    j++;
+                }
+                if (j == next.count) {
+                    // past all the blocks of the next lane: it is dropped, and the lane goes on
+                    next.dead = true;
+                    n++;
+                    j = 0;
+                    run = 0;
+                    continue;
+                }
+                if (j != from) {
+                    // blocks of the next lane which this lane doesn't have: the boundaries which
+                    // coincide must be consecutive in both lanes, a boundary coincides by chance
+                    run = 0;
+                }
+                if (next.starts[j] == at) {
+                    if (++run == required) {
+                        next.validFrom = j - required + 1;
+                        lane.validTo = lane.count - required;
+                        return;
+                    }
+                    j++;
+                } else {
+                    run = 0;
+                }
+                break;
+            }
+        }
     }
 
     /** Tells if the components are red, green and blue, like libjpeg guesses it from the markers. */
@@ -733,18 +1224,23 @@ final class JpegDecoder {
                         || adobeTransform < 0 && components[0].id == 'R' && components[1].id == 'G' && components[2].id == 'B');
     }
 
-    private void decodeRows(boolean rgb, RowConsumer rows) throws IOException {
+    /** Transforms the coefficients of the components into samples. */
+    private void transform() throws IOException {
         if (components == null) {
             throw new IOException("No image in the JPEG file");
         }
         for (var c : components) {
-            if (c.quant == null) {
+            if (c.quant == null || c.coefficients == null && c.samples == null) {
                 throw new IOException("JPEG component without data");
             }
-            if (!c.skipped) {
+            if (!c.skipped && c.samples == null) {
                 inverseDct(c);
             }
         }
+    }
+
+    private void decodeRows(boolean rgb, RowConsumer rows) throws IOException {
+        transform();
         // rows are converted in parallel, by bands, and given to the consumer in order
         var band = new float[Math.min(height, ROWS_PER_BAND)][width];
         for (var first = 0; first < height; first += ROWS_PER_BAND) {
