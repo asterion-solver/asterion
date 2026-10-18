@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -62,8 +63,21 @@ public final class StarIndex {
     private static final ValueLayout.OfFloat FLOAT = ValueLayout.JAVA_FLOAT_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
     private static final ValueLayout.OfDouble DOUBLE = ValueLayout.JAVA_DOUBLE_UNALIGNED.withOrder(ByteOrder.LITTLE_ENDIAN);
 
+    /** The windows on the file are this many bytes apart, see {@link #windows}. */
+    private static final int WINDOW_BITS = 30;
+    private static final long WINDOW_MASK = (1L << WINDOW_BITS) - 1;
+    /** The bytes a window has beyond the start of the next one: a value is always read from a single window. */
+    private static final int WINDOW_OVERLAP = 16;
+
     private final Path path;
     private final MemorySegment data;
+    /**
+     * The file, as byte buffers which start every {@code 2^WINDOW_BITS} bytes: what searches read.
+     * Native images run the accesses of memory segments through method handles, several times
+     * slower than the ones of byte buffers, which are plain loads; a buffer can't be larger than
+     * 2 GB, so the file is cut into windows.
+     */
+    private final ByteBuffer[] windows;
     private final String name;
     private final int starCount;
     private final int quadCount;
@@ -85,6 +99,7 @@ public final class StarIndex {
     private StarIndex(Path path, MemorySegment data) throws IOException {
         this.path = path;
         this.data = data;
+        this.windows = windows(data);
         if (data.byteSize() < HEADER_SIZE || data.get(INT, 0) != MAGIC) {
             throw new IOException(path + " is not a star index file");
         }
@@ -130,6 +145,33 @@ public final class StarIndex {
         if (data.byteSize() < expectedSize) {
             throw new IOException("Truncated index file " + path + ", please rebuild or download the catalog again");
         }
+    }
+
+    private static ByteBuffer[] windows(MemorySegment data) {
+        var size = data.byteSize();
+        var windows = new ByteBuffer[(int) ((size + WINDOW_MASK) >>> WINDOW_BITS)];
+        for (var i = 0; i < windows.length; i++) {
+            var start = (long) i << WINDOW_BITS;
+            var length = Math.min(size - start, (1L << WINDOW_BITS) + WINDOW_OVERLAP);
+            windows[i] = data.asSlice(start, length).asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+        }
+        return windows;
+    }
+
+    private int getInt(long offset) {
+        return windows[(int) (offset >>> WINDOW_BITS)].getInt((int) (offset & WINDOW_MASK));
+    }
+
+    private long getLong(long offset) {
+        return windows[(int) (offset >>> WINDOW_BITS)].getLong((int) (offset & WINDOW_MASK));
+    }
+
+    private short getShort(long offset) {
+        return windows[(int) (offset >>> WINDOW_BITS)].getShort((int) (offset & WINDOW_MASK));
+    }
+
+    private float getFloat(long offset) {
+        return windows[(int) (offset >>> WINDOW_BITS)].getFloat((int) (offset & WINDOW_MASK));
     }
 
     public static StarIndex open(Path path) throws IOException {
@@ -200,7 +242,7 @@ public final class StarIndex {
         var n = grids[level].coneRanges(ra, dec, radius, out);
         var base = levelCellStartOffset[level];
         for (var i = 0; i < n; i++) {
-            out[i] = data.get(INT, base + 4L * out[i]);
+            out[i] = getInt(base + 4L * out[i]);
         }
         return n;
     }
@@ -212,11 +254,11 @@ public final class StarIndex {
      */
     public void starVector(int star, double years, double[] out) {
         var offset = starsOffset + (long) star * STAR_SIZE;
-        var ra = (data.get(INT, offset) & 0xFFFFFFFFL) * RA_UNIT;
-        var dec = data.get(INT, offset + 4) * DEC_UNIT;
+        var ra = (getInt(offset) & 0xFFFFFFFFL) * RA_UNIT;
+        var dec = getInt(offset + 4) * DEC_UNIT;
         var cd = Math.cos(dec);
-        var pmRa = data.get(SHORT, offset + 8);
-        var pmDec = data.get(SHORT, offset + 10);
+        var pmRa = getShort(offset + 8);
+        var pmDec = getShort(offset + 10);
         if ((pmRa | pmDec) != 0 && years != 0) {
             dec += pmDec * PM_UNIT * years;
             ra += pmRa * PM_UNIT * years / Math.max(cd, 1e-6);
@@ -229,21 +271,21 @@ public final class StarIndex {
 
     /** The index of the first quad of a cell of the code hash grid. */
     public int quadCellStart(int cell) {
-        return data.get(INT, quadCellStartOffset + 4L * cell);
+        return getInt(quadCellStartOffset + 4L * cell);
     }
 
     /** The 4 quantized coordinates of the code of a quad, packed as 16-bit fields (cx is the lowest). */
     public long quadCode(int quad) {
-        return data.get(LONG, quadCodesOffset + 8L * quad);
+        return getLong(quadCodesOffset + 8L * quad);
     }
 
     public int quadStar(int quad, int i) {
-        return data.get(INT, quadStarsOffset + 16L * quad + 4L * i);
+        return getInt(quadStarsOffset + 16L * quad + 4L * i);
     }
 
     /** The angular distance between stars A and B of a quad, in radians. */
     public float quadDiam(int quad) {
-        return data.get(FLOAT, quadAuxOffset + (long) QUAD_AUX_SIZE * quad);
+        return getFloat(quadAuxOffset + (long) QUAD_AUX_SIZE * quad);
     }
 
     /**
@@ -253,7 +295,7 @@ public final class StarIndex {
      * 1 / {@link QuadCode#CHECK_SCALE}. A missing star has an abscissa of {@link QuadCode#NO_CHECK}.
      */
     public long quadChecks(int quad) {
-        return data.get(LONG, quadAuxOffset + (long) QUAD_AUX_SIZE * quad + 4);
+        return getLong(quadAuxOffset + (long) QUAD_AUX_SIZE * quad + 4);
     }
 
     @Override
