@@ -25,6 +25,8 @@ import me.champeau.asterion.math.TangentPlane;
 final class Hypothesis {
     /** The index which contains the matched quad. */
     StarIndex index;
+    /** The matched quad, in the index. */
+    int quad;
     /** The number of years between the epoch of the index and the date of the image. */
     double years;
     TangentPlane plane;

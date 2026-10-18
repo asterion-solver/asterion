@@ -224,8 +224,9 @@ Its API is what the page uses:
 2. **Geometric hashing**. Groups of four stars are described by a code which doesn't depend on the position,
    scale and orientation of the image, as in [astrometry.net](https://arxiv.org/abs/0910.2233). An index
    contains millions of such groups, built from the brightest stars of each region of the sky at all
-   scales, and those of the image are looked up in it, brightest stars first. Neighbouring stars which
-   must be in the image too reject most false matches immediately.
+   scales, and those of the image are looked up in it, brightest stars first, by all the processors at
+   once: each one searches its share of the stars, and all stop as soon as one has found the image.
+   Neighbouring stars which must be in the image too reject most false matches immediately.
 3. **Verification**. Each match is a hypothesis about where the image is. Catalog stars are compared with
    the stars of the image until the odds that the match is right reach a billion to one, or get too low.
 4. **Refinement**. All the stars of the image are matched with the deepest catalog, with proper motions

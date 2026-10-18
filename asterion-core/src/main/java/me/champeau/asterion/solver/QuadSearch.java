@@ -22,6 +22,7 @@ import me.champeau.asterion.math.TangentPlane;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Searches the quads of an image in indexes. Quads are enumerated starting with the ones made
@@ -92,6 +93,23 @@ final class QuadSearch {
     long maxQuads = Long.MAX_VALUE;
     /** The search gives up after this many verifications too: they are what costs when quads have many candidates. */
     long maxVerifications = Long.MAX_VALUE;
+    /**
+     * Searches run in parallel lanes: this one tries the quads whose faintest star is the
+     * {@code lane}-th of every {@code lanes} stars, in the order of brightness like the others,
+     * and all stop when one has found a hypothesis.
+     */
+    int lane;
+    int lanes = 1;
+    /** Set by the lane which has found a hypothesis, or null when the search runs alone. */
+    AtomicBoolean found;
+    /** The index quads of the hypotheses which were found before, and rejected by the refinement. */
+    List<Rejected> rejected = List.of();
+
+    /** An index quad whose hypothesis was rejected. */
+    record Rejected(
+            StarIndex index,
+            int quad) {
+    }
 
     /**
      * @param epoch the date of the image, as a Julian year
@@ -163,9 +181,11 @@ final class QuadSearch {
                 timedOut = true;
                 return null;
             }
-            if (quads >= maxQuads || verifications >= maxVerifications) {
+            if (quads >= maxQuads || verifications >= maxVerifications || found != null && found.get()) {
                 return null;
             }
+            // the quads of this star are tried by this lane, the other lanes keep their circles
+            var mine = nn % lanes == lane;
             var px = x[nn];
             var py = y[nn];
             // the new star is C or D of the pairs made of brighter stars
@@ -188,7 +208,7 @@ final class QuadSearch {
                     for (var wd = 0; wd < words; wd++) {
                         for (var mem = members[base + wd]; mem != 0; mem &= mem - 1) {
                             var m = (wd << 6) + Long.numberOfTrailingZeros(mem);
-                            if (tryQuad(i, j, m, nn, d2)) {
+                            if (mine && tryQuad(i, j, m, nn, d2)) {
                                 return hypothesis;
                             }
                         }
@@ -227,7 +247,7 @@ final class QuadSearch {
                             }
                             for (; mem2 != 0; mem2 &= mem2 - 1) {
                                 var m2 = (w2 << 6) + Long.numberOfTrailingZeros(mem2);
-                                if (tryQuad(i, nn, m1, m2, d2)) {
+                                if (mine && tryQuad(i, nn, m1, m2, d2)) {
                                     return hypothesis;
                                 }
                             }
@@ -240,6 +260,9 @@ final class QuadSearch {
     }
 
     private boolean tryQuad(int a, int b, int c, int d, double d2) {
+        if (found != null && found.get()) {
+            return false;
+        }
         quads++;
         var ax = x[a];
         var ay = y[a];
@@ -360,6 +383,11 @@ final class QuadSearch {
         if (!hasCheckStars(index.quadChecks(q), a, b, pixels, sign)) {
             return false;
         }
+        for (var r : rejected) {
+            if (r.quad == q && r.index == index) {
+                return false;
+            }
+        }
         var h = hypothesis;
         var sx = 0.0;
         var sy = 0.0;
@@ -443,8 +471,15 @@ final class QuadSearch {
         h.quadY = sign * pmy;
         h.quadR2 = den;
         h.index = index;
+        h.quad = q;
         h.years = years;
-        return target.verifier.verify(h);
+        if (!target.verifier.verify(h)) {
+            return false;
+        }
+        if (found != null) {
+            found.set(true);
+        }
+        return true;
     }
 
     /**

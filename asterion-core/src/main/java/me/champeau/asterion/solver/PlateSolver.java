@@ -28,6 +28,9 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Finds where an image of the sky was taken, its scale and its orientation, from the stars it
@@ -57,6 +60,18 @@ public final class PlateSolver {
     private static final double RETRY_THRESHOLD_FACTOR = 2;
     /** The number of stars of the quick searches, see {@link #stages}. */
     private static final int SHALLOW_QUAD_STARS = 32;
+    /**
+     * The lanes of the searches, for all the indexes together, see {@link QuadSearch#lanes}: the
+     * searches which succeed in a few hundred quads cost the dispatch of the lanes, a fraction of
+     * a millisecond, and the others are as many times faster.
+     */
+    private static final int PARALLEL_LANES = ForkJoinPool.getCommonPoolParallelism() + 1;
+    /**
+     * How many hypotheses the refinement may reject in a stage before the next stage is tried:
+     * the search goes on without the quad of a rejected hypothesis, as a weak match of the right
+     * field may be found before the strong one, especially by parallel lanes.
+     */
+    private static final int MAX_REJECTIONS = 3;
     /** The quads and the verifications the deep search of the concentrated stars may try, see {@link #stages}. */
     private static final Budget CONCENTRATED_BUDGET = new Budget(30_000, 3_000);
     /** The relative error which is tolerated on the scale found in image files. */
@@ -309,6 +324,47 @@ public final class PlateSolver {
     }
 
     /**
+     * The searches of a stage: parallel lanes which share its budget, each index having its own
+     * lanes so that a sparse index isn't slowed down by a dense one, or a single search when there
+     * is a single processor.
+     */
+    private List<QuadSearch> searches(Stage stage, int width, int height, SolverOptions o, double epoch, double[] hint, long deadline,
+                                      List<QuadSearch.Rejected> rejected) {
+        var x = stage.list().x();
+        var y = stage.list().y();
+        var n = stage.list().size();
+        var minScale = o.minScale() * Sphere.ARCSEC;
+        var maxScale = o.maxScale() * Sphere.ARCSEC;
+        var radius = Math.toRadians(o.searchRadiusDeg());
+        var searches = new ArrayList<QuadSearch>();
+        if (PARALLEL_LANES < 2) {
+            var search = new QuadSearch(indexes, x, y, n, width, height, o, epoch, stage.maxStars(), stage.tolerance(), minScale, maxScale,
+                    hint, radius, deadline);
+            search.maxQuads = stage.budget().quads();
+            search.maxVerifications = stage.budget().verifications();
+            search.rejected = rejected;
+            searches.add(search);
+            return searches;
+        }
+        var found = new AtomicBoolean();
+        var lanes = Math.max(1, PARALLEL_LANES / indexes.size());
+        for (var index : indexes) {
+            for (var lane = 0; lane < lanes; lane++) {
+                var search = new QuadSearch(List.of(index), x, y, n, width, height, o, epoch, stage.maxStars(), stage.tolerance(), minScale,
+                        maxScale, hint, radius, deadline);
+                search.lane = lane;
+                search.lanes = lanes;
+                search.found = found;
+                search.maxQuads = stage.budget().quads() / lanes;
+                search.maxVerifications = stage.budget().verifications() / lanes;
+                search.rejected = rejected;
+                searches.add(search);
+            }
+        }
+        return searches;
+    }
+
+    /**
      * Solves a list of stars.
      *
      * @param stars the stars, sorted by decreasing brightness
@@ -345,6 +401,7 @@ public final class PlateSolver {
             var o = attempt.options();
             var hint = o.hasPosition() ? QuadSearch.vector(o.raDeg(), o.decDeg()) : null;
             Stage previous = null;
+            var rejected = new ArrayList<QuadSearch.Rejected>();
             for (var stage : stages) {
                 var maxStars = Math.min(stage.maxStars(), o.maxQuadStars());
                 var tolerance = Math.min(stage.tolerance(), o.codeTolerance());
@@ -354,17 +411,24 @@ public final class PlateSolver {
                     continue;
                 }
                 previous = current;
-                var x = stage.list().x();
-                var y = stage.list().y();
-                var search = new QuadSearch(indexes, x, y, stage.list().size(), width, height, o, epoch, maxStars, tolerance,
-                        o.minScale() * Sphere.ARCSEC, o.maxScale() * Sphere.ARCSEC, hint, Math.toRadians(o.searchRadiusDeg()), deadline);
-                search.maxQuads = stage.budget().quads();
-                search.maxVerifications = stage.budget().verifications();
-                var h = search.run();
-                quads += search.quads;
-                candidates += search.candidates;
-                verifications += search.verifications;
-                if (h != null) {
+                for (var rejections = 0; rejections <= MAX_REJECTIONS; rejections++) {
+                    var searches = searches(current, width, height, o, epoch, hint, deadline, List.copyOf(rejected));
+                    var h = searches.size() == 1
+                            ? searches.getFirst().run()
+                            : searches.parallelStream().map(QuadSearch::run).filter(Objects::nonNull).findAny().orElse(null);
+                    var timedOut = false;
+                    for (var search : searches) {
+                        quads += search.quads;
+                        candidates += search.candidates;
+                        verifications += search.verifications;
+                        timedOut |= search.timedOut;
+                    }
+                    if (timedOut) {
+                        break attempts;
+                    }
+                    if (h == null) {
+                        break;
+                    }
                     // the solution is refined with the deepest index, whatever the one which found it
                     var deepest = h.index;
                     for (var index : indexes) {
@@ -377,9 +441,7 @@ public final class PlateSolver {
                         usedHints = attempt.hinted();
                         break attempts;
                     }
-                }
-                if (search.timedOut) {
-                    break attempts;
+                    rejected.add(new QuadSearch.Rejected(h.index, h.quad));
                 }
             }
         }
