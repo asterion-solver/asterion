@@ -213,12 +213,30 @@ $('solve-form').addEventListener('submit', async event => {
             thumbnailView(file, data).then(view => view && result.contains(views[0]) && views[0].after(view));
         }
     } catch (e) {
-        result.replaceChildren(element('div', String(e), 'status error'));
+        result.replaceChildren(e instanceof TypeError ? unreachableView() : element('div', String(e), 'status error'));
     } finally {
         button.disabled = false;
         button.textContent = 'Solve';
     }
 });
+
+/** The port the web interface listens on when it starts, as the page last knew it. */
+let savedPort = null;
+
+/**
+ * The message for requests which get no answer at all: the browser only says "Failed to fetch".
+ * The web interface was stopped, or it was restarted on the port saved in its options.
+ */
+function unreachableView() {
+    const view = element('div', 'The web interface doesn\'t answer at this address: it was stopped, or restarted on another port. ', 'status error');
+    if (savedPort && String(savedPort) !== location.port) {
+        const address = `${location.protocol}//${location.hostname}:${savedPort}/`;
+        const link = element('a', address);
+        link.href = address;
+        view.append('Its saved port is ' + savedPort + ': ', link);
+    }
+    return view;
+}
 
 /** The width of thumbnails, in pixels: they are shown smaller, sharp on high density screens. */
 const THUMBNAIL_WIDTH = 800;
@@ -705,6 +723,7 @@ async function loadSettings() {
     const response = await fetch('api/settings');
     if (!response.ok) return;
     const settings = await response.json();
+    savedPort = settings.port;
     $('port').value = settings.port;
     showSettings(settings);
 }
@@ -735,6 +754,7 @@ $('port-save').addEventListener('click', async () => {
     const response = await fetch('api/settings?port=' + encodeURIComponent($('port').value), {method: 'POST'});
     const data = await response.json();
     if (response.ok) {
+        savedPort = data.port;
         showSettings(data, true);
     } else {
         $('port-state').textContent = data.error;
