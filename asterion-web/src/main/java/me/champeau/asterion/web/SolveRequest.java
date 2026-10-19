@@ -188,6 +188,7 @@ final class SolveRequest {
                         .field("label", o.label())
                         .field("designation", o.designation())
                         .field("commonName", o.commonName().isEmpty() ? null : o.commonName())
+                        .field("aliases", o.aliases().isEmpty() ? null : o.aliases())
                         .field("type", o.type().description())
                         .field("ra", o.raDeg())
                         .field("dec", o.decDeg())

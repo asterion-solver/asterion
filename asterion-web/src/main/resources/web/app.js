@@ -345,6 +345,8 @@ function wcsProjection(wcs) {
 
 /** The radius of the outlines whose labels are inside, in pixels of the thumbnail: they would hide smaller objects. */
 const LABELS_INSIDE = 80;
+/** The objects of the catalogs of Lynds which an overlay shows, at most. */
+const MAX_LYNDS_OBJECTS = 6;
 
 /** The steps of the grid of coordinates, in degrees. */
 const GRID_STEPS = [1, 2, 5, 10, 15, 20, 30].map(m => m / 60).concat([1, 2, 5, 10, 15, 20, 30]);
@@ -462,22 +464,33 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
     add('path', {d: lines.map(([points]) => path(points)).join(''), class: 'grid'});
     for (const line of lines) label(...line);
 
-    // the deep sky objects: their outlines, from their sizes and position angles, then the labels of
-    // the most prominent ones, as they come first, where they cover neither other labels nor markers
+    // the deep sky objects, the most prominent first, as they come: their outlines, from their sizes
+    // and position angles, with their labels. An object is shown only where its label has room,
+    // covering neither other labels nor markers: an outline without a name is noise
     const taken = [compass];
-    const free = box => box[0] >= 0 && box[2] <= thumbWidth && box[1] >= 0 && box[3] <= thumbHeight
-        && !taken.some(t => box[0] < t[2] && t[0] < box[2] && box[1] < t[3] && t[1] < box[3]);
-    const shown = [];
-    for (const o of (data.objects || []).slice(0, 30)) {
+    const overlaps = box => taken.some(t => box[0] < t[2] && t[0] < box[2] && box[1] < t[3] && t[1] < box[3]);
+    const free = box => box[0] >= 0 && box[2] <= thumbWidth && box[1] >= 0 && box[3] <= thumbHeight && !overlaps(box);
+    let lynds = 0;
+    // the large outlines which are drawn: centers and radii
+    const outlines = [];
+    for (const o of (data.objects || []).slice(0, 60)) {
+        // the catalogs of Lynds cut complexes into many pieces, with generous extents: a few are enough
+        const fromLynds = /^L[BD]N /.test(o.name);
+        if (fromLynds && lynds >= MAX_LYNDS_OBJECTS) continue;
         // the position computed by the server, which is exact: the inverse polynomials of the
         // distortion are approximations, which drift on the edges of very wide fields
         const center = toThumb([o.x, o.y]);
         const projected = project(o.ra, o.dec);
         if (!inside(center) || !projected) continue;
         const shift = p => p && [p[0] + center[0] - projected[0], p[1] + center[1] - projected[1]];
-        const a = (o.majorArcmin || 0) / 120;
-        const b = (o.minorArcmin || o.majorArcmin || 0) / 120;
-        const angle = (o.angle || 0) * Math.PI / 180;
+        // an object whose orientation isn't known is a circle of the same area: an ellipse would have to
+        // point somewhere, and a circle of its major axis would be much larger than the object
+        const oriented = o.angle !== undefined && o.angle !== null;
+        const major = (o.majorArcmin || 0) / 120;
+        const minor = (o.minorArcmin || o.majorArcmin || 0) / 120;
+        const a = oriented ? major : Math.sqrt(major * minor);
+        const b = oriented ? minor : a;
+        const angle = oriented ? o.angle * Math.PI / 180 : 0;
         const outline = [];
         for (let i = 0; i <= 48 && a > 0; i++) {
             const t = 2 * Math.PI * i / 48;
@@ -486,19 +499,14 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
             outline.push(shift(project(o.ra + east / Math.cos(o.dec * Math.PI / 180), o.dec + north)));
         }
         const extent = outline.filter(p => p).reduce((m, p) => Math.max(m, Math.hypot(p[0] - center[0], p[1] - center[1])), 0);
-        if (extent >= 6) {
-            add('path', {d: path(outline) + 'Z', class: 'object'});
-        } else {
-            add('circle', {cx: center[0], cy: center[1], r: 6, class: 'object'});
-        }
-        // a small object is its marker; the outline of a large one can have labels inside
+        // a small object is its marker, which must be free; the outline of a large one can have labels inside
         const radius = Math.max(extent, 6);
-        if (radius < LABELS_INSIDE) {
-            taken.push([center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius]);
-        }
-        shown.push([o, center, radius]);
-    }
-    for (const [o, center, radius] of shown) {
+        // the catalogs of Lynds cut complexes into pieces, with generous extents: the large outlines of
+        // the pieces of a complex whose outline is drawn already, or of the same one, would pile up
+        if (fromLynds && radius >= LABELS_INSIDE
+            && outlines.some(([c, r]) => Math.hypot(c[0] - center[0], c[1] - center[1]) < r + radius)) continue;
+        const marker = [center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius];
+        if (radius < LABELS_INSIDE && overlaps(marker)) continue;
         // inside the outlines which are large enough, as a label next to a large outline is next to
         // other objects too; next to the marker otherwise
         const width = o.label.length * 8.5;
@@ -508,9 +516,22 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
             : [at(center[0] + radius + 4, center[1] + 5), at(center[0] - radius - 4 - width, center[1] + 5),
                 at(center[0] - width / 2, center[1] + radius + 17), at(center[0] - width / 2, center[1] - radius - 6)];
         const box = candidates.find(free);
-        if (box) {
-            taken.push(box);
-            add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, o.label);
+        if (!box) continue;
+        if (extent >= 6) {
+            add('path', {d: path(outline) + 'Z', class: 'object'});
+        } else {
+            add('circle', {cx: center[0], cy: center[1], r: 6, class: 'object'});
+        }
+        add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, o.label);
+        taken.push(box);
+        if (radius >= LABELS_INSIDE) {
+            outlines.push([center, radius]);
+        }
+        if (radius < LABELS_INSIDE) {
+            taken.push(marker);
+        }
+        if (fromLynds) {
+            lynds++;
         }
     }
 
@@ -603,7 +624,8 @@ function objectsView(objects) {
     view.append(element('span', 'Contains '));
     shown.forEach((o, i) => {
         const name = element('span', o.label, 'object');
-        name.title = `${o.type}, ${o.distance.toFixed(2)}° from the center` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '');
+        name.title = `${o.type}, ${o.distance.toFixed(2)}° from the center` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '')
+            + (o.aliases ? `; also ${o.aliases}` : '');
         view.append(i > 0 ? ', ' : '', name);
     });
     if (objects.length > shown.length) {

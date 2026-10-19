@@ -26,9 +26,12 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * The deep sky objects of the Messier, NGC and IC catalogs, and a few others: galaxies, clusters
- * and nebulae, with their size, to tell which ones an image contains. The table comes from OpenNGC,
- * see the credits in {@code third-party/openngc.md}.
+ * The deep sky objects of the Messier, NGC and IC catalogs, of the catalogs of HII regions of
+ * Sharpless and of bright and dark nebulae of Lynds, and a few others: galaxies, clusters and
+ * nebulae, with their size, to tell which ones an image contains. An object which several catalogs
+ * list appears once, with the designation of the most famous one, and the others as aliases. The
+ * table comes from OpenNGC and VizieR, see the credits in {@code third-party/openngc.md} and
+ * {@code third-party/vizier-nebulae.md}.
  */
 public final class DeepSkyObjects {
     /** The kinds of objects. */
@@ -65,12 +68,28 @@ public final class DeepSkyObjects {
         }
     }
 
+    /** The catalogs of the designations of objects, the most famous first. */
+    public enum Catalog {
+        NGC,
+        IC,
+        /** The catalogs of the few other objects of OpenNGC: Caldwell, Melotte, Collinder, Barnard... */
+        OTHER,
+        /** The HII regions of Sharpless (1959). */
+        SHARPLESS,
+        /** The bright nebulae of Lynds (1965). */
+        LBN,
+        /** The dark nebulae of Lynds (1962). */
+        LDN
+    }
+
     /**
      * A deep sky object.
      *
      * @param designation the designation in its catalog, such as "NGC 224"
+     * @param catalog the catalog of the designation
      * @param messier the Messier number, or 0
      * @param commonName the common names, separated by commas, or an empty string
+     * @param aliases the designations of the object in less famous catalogs, separated by commas, or an empty string
      * @param raDeg the right ascension of the center, J2000, in degrees
      * @param decDeg the declination of the center, J2000, in degrees
      * @param majorArcmin the major axis, in arcminutes, or NaN
@@ -80,8 +99,10 @@ public final class DeepSkyObjects {
      */
     public record DeepSkyObject(
             String designation,
+            Catalog catalog,
             int messier,
             String commonName,
+            String aliases,
             Type type,
             double raDeg,
             double decDeg,
@@ -99,7 +120,7 @@ public final class DeepSkyObjects {
             return commonName.isEmpty() ? name() : name() + " (" + commonName + ")";
         }
 
-        /** The order in which objects are listed: Messier objects, then named ones, the largest first. */
+        /** The order in which objects are listed: Messier objects, then named ones, then the others. */
         int tier() {
             return messier > 0 ? 0 : commonName.isEmpty() ? 2 : 1;
         }
@@ -119,7 +140,9 @@ public final class DeepSkyObjects {
             double distanceDeg) {
     }
 
+    /** Messier objects, then named ones, then the others, by catalog, the most famous first, then the largest and the brightest. */
     private static final Comparator<InField> PROMINENCE = Comparator.comparingInt((InField f) -> f.object().tier())
+            .thenComparing(f -> f.object().catalog())
             .thenComparing(f -> f.object().majorArcmin(), (a, b) -> Double.compare(nanLast(b), nanLast(a)))
             .thenComparing(f -> f.object().magnitude(), (a, b) -> Double.compare(nanLast(a), nanLast(b)))
             .thenComparingDouble(InField::distanceDeg);
@@ -134,25 +157,39 @@ public final class DeepSkyObjects {
     /** For each object: right ascension, declination, the 3 coordinates of its unit vector, the axes, the angle and the magnitude. */
     private final float[] numbers;
     private final byte[] types;
+    private final byte[] catalogs;
     private final short[] messiers;
-    /** For each object, where its designation and its common name start in the strings; one more for the end. */
+    /** For each object, where its designation, its common name and its aliases start in the strings; one more for the end. */
     private final int[] offsets;
     private final byte[] strings;
+    /** The largest major axis of the objects, in degrees. */
+    private final double largestDeg;
 
     private static final int NUMBERS = 9;
+    private static final int STRINGS = 3;
 
-    private DeepSkyObjects(int count, float[] numbers, byte[] types, short[] messiers, int[] offsets, byte[] strings) {
+    private DeepSkyObjects(int count, float[] numbers, byte[] types, byte[] catalogs, short[] messiers, int[] offsets, byte[] strings) {
         this.count = count;
         this.numbers = numbers;
         this.types = types;
+        this.catalogs = catalogs;
         this.messiers = messiers;
         this.offsets = offsets;
         this.strings = strings;
+        var largest = 0f;
+        for (var i = 0; i < count; i++) {
+            var major = numbers[NUMBERS * i + 5];
+            if (major > largest) {
+                largest = major;
+            }
+        }
+        this.largestDeg = largest / 60.0;
     }
 
     private DeepSkyObject object(int i) {
         var n = NUMBERS * i;
-        return new DeepSkyObject(string(2 * i), messiers[i], string(2 * i + 1), Type.values()[types[i]],
+        return new DeepSkyObject(string(STRINGS * i), Catalog.values()[catalogs[i]], messiers[i], string(STRINGS * i + 1),
+                string(STRINGS * i + 2), Type.values()[types[i]],
                 round(numbers[n], 1e6), round(numbers[n + 1], 1e6),
                 round(numbers[n + 5], 100), round(numbers[n + 6], 100), round(numbers[n + 7], 100), round(numbers[n + 8], 100));
     }
@@ -185,8 +222,8 @@ public final class DeepSkyObjects {
         var center = new double[3];
         wcs.pixelToVector((width - 1) / 2.0, (height - 1) / 2.0, center);
         // objects far from the center are left out before being projected: the largest objects
-        // of the table are a few degrees across
-        var maxRadius = Math.toRadians(scale * Math.hypot(width, height) / 2 / 3600 + 6);
+        // of the table are 20° across
+        var maxRadius = Math.toRadians(scale * Math.hypot(width, height) / 2 / 3600 + table.largestDeg / 2);
         var minDot = Math.cos(maxRadius);
         var pixel = new double[2];
         var found = new ArrayList<InField>();
@@ -222,10 +259,10 @@ public final class DeepSkyObjects {
     }
 
     /**
-     * Reads the table, see {@code asterion-core/src/dso/GenerateDeepSkyObjects.java}: "DSO2", the
+     * Reads the table, see {@code asterion-core/src/dso/GenerateDeepSkyObjects.java}: "DSO3", the
      * number of objects, their numbers as floats (position, unit vector, axes, angle, magnitude),
-     * their types, their Messier numbers, then the offsets of their designations and common names
-     * in a block of UTF-8 strings, which follows.
+     * their types, their catalogs, their Messier numbers, then the offsets of their designations,
+     * common names and aliases in a block of UTF-8 strings, which follows.
      */
     private static DeepSkyObjects load() {
         try (var resource = DeepSkyObjects.class.getResourceAsStream("deep-sky-objects.bin")) {
@@ -235,7 +272,7 @@ public final class DeepSkyObjects {
             var buffer = ByteBuffer.wrap(resource.readAllBytes());
             var magic = new byte[4];
             buffer.get(magic);
-            if (!new String(magic, StandardCharsets.US_ASCII).equals("DSO2")) {
+            if (!new String(magic, StandardCharsets.US_ASCII).equals("DSO3")) {
                 throw new IOException("Unexpected format of the table of deep sky objects");
             }
             var count = buffer.getInt();
@@ -244,15 +281,17 @@ public final class DeepSkyObjects {
             buffer.position(buffer.position() + 4 * numbers.length);
             var types = new byte[count];
             buffer.get(types);
+            var catalogs = new byte[count];
+            buffer.get(catalogs);
             var messiers = new short[count];
             buffer.asShortBuffer().get(messiers);
             buffer.position(buffer.position() + 2 * count);
-            var offsets = new int[2 * count + 1];
+            var offsets = new int[STRINGS * count + 1];
             buffer.asIntBuffer().get(offsets);
             buffer.position(buffer.position() + 4 * offsets.length);
             var strings = new byte[buffer.remaining()];
             buffer.get(strings);
-            return new DeepSkyObjects(count, numbers, types, messiers, offsets, strings);
+            return new DeepSkyObjects(count, numbers, types, catalogs, messiers, offsets, strings);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

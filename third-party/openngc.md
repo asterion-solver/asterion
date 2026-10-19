@@ -14,5 +14,8 @@ axes, the position angle, the visual magnitude (or the blue one), the type, the 
 common names; duplicate and non-existent entries are left out, and designations are expanded
 ("NGC0224" becomes "NGC 224", "Mel022" becomes "Melotte 22").
 
+The table also has the nebulae of the catalogs of Sharpless and Lynds, see [vizier-nebulae.md](vizier-nebulae.md):
+the ones which are objects of OpenNGC are merged into them, with the identifications of OpenNGC.
+
 OpenNGC itself merges data from the NASA/IPAC Extragalactic Database, HyperLEDA, SIMBAD, HEASARC and
 Harold Corwin's NGC/IC catalog.

@@ -124,6 +124,9 @@ final class Report {
                 if (!o.commonName().isEmpty()) {
                     field(sb, "commonName", o.commonName());
                 }
+                if (!o.aliases().isEmpty()) {
+                    field(sb, "aliases", o.aliases());
+                }
                 field(sb, "type", o.type().description());
                 field(sb, "ra", o.raDeg());
                 field(sb, "dec", o.decDeg());

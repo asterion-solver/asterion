@@ -57,7 +57,8 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
 
 ## Project structure
 
-- `asterion-core`: the library. Its table of deep sky objects (Messier, NGC, IC) is generated from OpenNGC by
+- `asterion-core`: the library. Its table of deep sky objects (Messier, NGC, IC, Sharpless, LBN, LDN) is generated
+  from OpenNGC and VizieR by
   `asterion-core/src/dso/GenerateDeepSkyObjects.java`, see [its README](asterion-core/src/dso/README.md). Its
   tests solve real images against a small index of their fields, see
   [asterion-core/src/testdata/README.md](asterion-core/src/testdata/README.md)
