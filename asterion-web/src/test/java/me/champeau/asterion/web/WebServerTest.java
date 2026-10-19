@@ -139,9 +139,10 @@ class WebServerTest {
         var definition = response.body();
         assertTrue(definition.startsWith("openapi: 3.1.0"), definition.substring(0, 40));
         assertFalse(definition.contains("@VERSION@"));
-        // every operation of the server is described, and only those
+        // every operation of the server is described, and only those; the lines of the definition
+        // end with CRLF in a Windows checkout
         var described = new TreeSet<String>();
-        for (var line : definition.split("\n")) {
+        for (var line : definition.lines().toList()) {
             if (line.matches("^  /api/[a-z.]+:$")) {
                 described.add(line.trim().replace(":", ""));
             }
