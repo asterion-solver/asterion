@@ -74,6 +74,8 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
   in the `me.champeau.asterion.cli.astap` package
 - `build-logic`: the build conventions, an included build
 - `benchmarks`: the [comparison with other solvers](benchmarks/README.md)
+- `integrations`: the scripts for [PixInsight](integrations/pixinsight/README.md) and
+  [Siril](integrations/siril/README.md)
 - `docs`: specifications, such as the [interface of ASTAP](docs/astap-interface.md) which the compatibility mode follows
 
 ## Building

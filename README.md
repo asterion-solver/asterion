@@ -230,10 +230,12 @@ Its API is what the page uses, which other programs can call too. Its definition
 | `GET /api/openapi.yaml` | the definition of the API |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
 
-## PixInsight
+## PixInsight and Siril
 
 A script solves the active image of PixInsight with Asterion and writes the solution in it, where
 PixInsight's own tools find it: see [integrations/pixinsight](integrations/pixinsight/README.md).
+Another one does the same for the loaded image of Siril, with SIP distortion: see
+[integrations/siril](integrations/siril/README.md). Both list and download catalogs.
 
 ## How it works
 
