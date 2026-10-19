@@ -56,6 +56,12 @@
                     <label class="check"><input name="hints" type="checkbox" checked> Use the hints of the image header</label>
                     <label class="check"><input name="blind" type="checkbox" checked> Search the whole sky if needed</label>
                 </fieldset>
+                <fieldset id="server-settings">
+                    <legend>Web interface</legend>
+                    <label>Port <input id="port" type="number" min="1" max="65535"></label>
+                    <div class="inline-button"><button type="button" id="port-save">Save</button></div>
+                    <div id="port-state" class="muted"></div>
+                </fieldset>
             </details>
             <button type="submit" id="solve-button">Solve</button>
         </form>

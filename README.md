@@ -184,7 +184,8 @@ Press Ctrl+C to stop
 ```
 
 Open the address in a browser. `--port` changes the port (0 for any free one), `--catalog-dir` the directory
-of the catalogs. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
+of the catalogs. The port can also be chosen in the options of the page, which saves it in
+`~/.asterion/web.properties` for the next start; `--port` takes precedence over it. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
 the network, without any access control.
 
 In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
@@ -217,6 +218,7 @@ Its API is what the page uses:
 | `POST /api/solve?name=image.fits&ra=…&dec=…&radius=…&fov=…` | solves the image sent as the body of the request, with the JSON output of `asterion --json`, its constellation, its outline on the sky and the positions of the matched stars |
 | `GET /api/download?id=…&format=fits` | a solved image, by the `download.id` of its solution: `fits` for the image with its solution, `wcs` for the header alone, `csv` for the matched stars |
 | `GET /api/thumbnail?id=…` | the thumbnail of a solved image, as a PNG file: the image reduced and stretched, the first row at the bottom when the `Asterion-Row-Order` header of the answer is `bottom-up`, like FITS files whose header doesn't say otherwise |
+| `GET /api/settings`, `POST /api/settings?port=…` | the port the server listens on when it starts, and saves it |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
 
 ## How it works

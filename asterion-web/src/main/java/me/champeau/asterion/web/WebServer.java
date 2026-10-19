@@ -23,9 +23,11 @@ import me.champeau.asterion.image.ImageLoader;
 import me.champeau.asterion.solver.SolutionFiles;
 import me.champeau.asterion.solver.SolveResult;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +49,8 @@ import java.util.logging.Logger;
 public final class WebServer implements AutoCloseable {
     /** The largest image which can be uploaded. */
     private static final long MAX_UPLOAD_BYTES = 2L << 30;
+    /** The port the server listens on, unless another one is given on the command line or saved from the interface. */
+    private static final int DEFAULT_PORT = 8080;
     /** The width of the thumbnails which are made here, see {@link #thumbnail}: the ones made by browsers have the same. */
     private static final int THUMBNAIL_WIDTH = 800;
     /** The largest radius of charts: they show the stars of a catalog around a solution. */
@@ -67,11 +71,17 @@ public final class WebServer implements AutoCloseable {
     private final HttpServer server;
     private final CatalogService catalogs;
     private final SolvedImages solved;
+    private final Preferences preferences;
+    /** True when the port was given on the command line, which wins over the one of the preferences. */
+    private final boolean portFromCommandLine;
 
-    private WebServer(HttpServer server, CatalogService catalogs, SolvedImages solved) {
+    private WebServer(HttpServer server, CatalogService catalogs, SolvedImages solved, Preferences preferences,
+                      boolean portFromCommandLine) {
         this.server = server;
         this.catalogs = catalogs;
         this.solved = solved;
+        this.preferences = preferences;
+        this.portFromCommandLine = portFromCommandLine;
     }
 
     /**
@@ -80,9 +90,20 @@ public final class WebServer implements AutoCloseable {
      * @param port the port, or 0 for any free port
      */
     public static WebServer start(String host, int port, Path catalogDirectory) throws IOException {
+        return start(host, port, catalogDirectory, Preferences.ofUser(), true);
+    }
+
+    /**
+     * Starts a server.
+     *
+     * @param port the port, or 0 for any free port
+     * @param portFromCommandLine true if the port was given on the command line, rather than read from the preferences
+     */
+    static WebServer start(String host, int port, Path catalogDirectory, Preferences preferences,
+                           boolean portFromCommandLine) throws IOException {
         var server = HttpServer.create(new InetSocketAddress(host, port), 0);
         var web = new WebServer(server, new CatalogService(catalogDirectory),
-                new SolvedImages(KEPT_IMAGES, KEPT_BYTES, KEPT_FOR, Clock.systemUTC()));
+                new SolvedImages(KEPT_IMAGES, KEPT_BYTES, KEPT_FOR, Clock.systemUTC()), preferences, portFromCommandLine);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.createContext("/api/catalogs", web.handler(web::catalogs));
         server.createContext("/api/install", web.handler(web::install));
@@ -91,6 +112,7 @@ public final class WebServer implements AutoCloseable {
         server.createContext("/api/download", web.handler(web::download));
         server.createContext("/api/thumbnail", web.handler(web::thumbnail));
         server.createContext("/api/astap", web.handler(WebServer::astap));
+        server.createContext("/api/settings", web.handler(web::settings));
         server.createContext("/", web.handler(WebServer::staticFile));
         server.start();
         return web;
@@ -146,6 +168,33 @@ public final class WebServer implements AutoCloseable {
     private void catalogs(HttpExchange exchange) throws IOException {
         expect(exchange, "GET");
         send(exchange, 200, catalogs.describe().field("version", version()));
+    }
+
+    /**
+     * The settings of the server: GET describes them, POST with a {@code port} saves the port the
+     * server listens on the next time it starts, unless a port is given on the command line.
+     */
+    private void settings(HttpExchange exchange) throws IOException {
+        if (exchange.getRequestMethod().equals("POST")) {
+            var value = SolveRequest.parse(exchange.getRequestURI().getRawQuery()).parameter("port");
+            int port;
+            try {
+                port = Integer.parseInt(String.valueOf(value).trim());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid port " + value + ": use a number from 1 to 65535");
+            }
+            preferences.savePort(port);
+        } else {
+            expect(exchange, "GET");
+        }
+        var current = server.getAddress().getPort();
+        var saved = preferences.port().orElse(DEFAULT_PORT);
+        send(exchange, 200, Json.object()
+                .field("port", saved)
+                .field("currentPort", current)
+                .field("portFromCommandLine", portFromCommandLine)
+                // the port which the server will listen on when it starts again
+                .field("restartNeeded", !portFromCommandLine && saved != current));
     }
 
     private void install(HttpExchange exchange) throws IOException {
@@ -346,7 +395,7 @@ public final class WebServer implements AutoCloseable {
     }
 
     /** Fails when more bytes than allowed are read, so that uploads can't fill the disk. */
-    private static final class LimitedInputStream extends java.io.FilterInputStream {
+    private static final class LimitedInputStream extends FilterInputStream {
         private long remaining;
 
         LimitedInputStream(InputStream in, long limit) {
@@ -377,7 +426,7 @@ public final class WebServer implements AutoCloseable {
         // nom-tam-fits logs the oddities of FITS files, which are reported as errors when they matter
         Logger.getLogger("nom.tam").setLevel(Level.OFF);
         var host = "127.0.0.1";
-        var port = 8080;
+        Integer port = null;
         var directory = Catalogs.defaultDirectory();
         for (var i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -399,7 +448,21 @@ public final class WebServer implements AutoCloseable {
                 }
             }
         }
-        var web = start(host, port, directory);
+        // the port of the command line, or else the one saved from the interface, or else the default
+        var preferences = Preferences.ofUser();
+        var saved = preferences.port();
+        var listen = port != null ? port : saved.orElse(DEFAULT_PORT);
+        WebServer web;
+        try {
+            web = start(host, listen, directory, preferences, port != null);
+        } catch (BindException e) {
+            System.err.println("Port " + listen + " is already in use, by another program or another web interface. "
+                    + (port == null && saved.isPresent()
+                            ? "It was saved from the interface, in " + preferences.file() + ": choose another one with --port."
+                            : "Choose another one with --port."));
+            System.exit(1);
+            return;
+        }
         Runtime.getRuntime().addShutdownHook(new Thread(web::close));
         System.out.println("Asterion Solver " + version() + ", web interface: " + web.uri());
         System.out.println("Catalogs: " + directory.toAbsolutePath());
@@ -421,7 +484,7 @@ public final class WebServer implements AutoCloseable {
         System.out.println("""
                 Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>]
                   --host <address>         the address to listen on (default: 127.0.0.1, this machine only)
-                  --port <port>            the port to listen on (default: 8080, 0 for any free port)
+                  --port <port>            the port to listen on (default: the one saved from the interface, or 8080; 0 for any free port)
                   --catalog-dir <dir>      the directory of the catalogs (default: $ASTERION_CATALOGS, or ~/.asterion/catalogs)
                   -V, --version            prints the version
                   -h, --help               prints this help""");

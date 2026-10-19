@@ -31,6 +31,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
+import java.util.OptionalInt;
 import java.util.SplittableRandom;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -94,6 +95,38 @@ class WebServerTest {
         assertTrue(body.contains("\"name\":\"gaia-500\""), body);
         assertTrue(body.contains("\"installations\":[]"), body);
         assertTrue(body.contains("\"directory\":"), body);
+    }
+
+    @Test
+    void savesThePortForTheNextStart(@TempDir Path directory) throws Exception {
+        var preferences = new Preferences(directory.resolve("web.properties"));
+        try (var web = WebServer.start("127.0.0.1", 0, catalogs, preferences, false)) {
+            var uri = web.uri();
+            var settings = client.send(HttpRequest.newBuilder(uri.resolve("api/settings")).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, settings.statusCode());
+            assertTrue(settings.body().startsWith("{\"port\":8080,\"currentPort\":" + uri.getPort() + ",\"portFromCommandLine\":false"),
+                    settings.body());
+
+            var invalid = client.send(
+                    HttpRequest.newBuilder(uri.resolve("api/settings?port=abc")).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(400, invalid.statusCode());
+            assertEquals(OptionalInt.empty(), preferences.port());
+
+            var saved = client.send(
+                    HttpRequest.newBuilder(uri.resolve("api/settings?port=9123")).POST(HttpRequest.BodyPublishers.noBody()).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, saved.statusCode());
+            assertTrue(saved.body().contains("\"port\":9123") && saved.body().endsWith("\"restartNeeded\":true}"), saved.body());
+            assertEquals(OptionalInt.of(9123), preferences.port());
+        }
+        // a port on the command line takes precedence: no restart would change the port
+        try (var web = WebServer.start("127.0.0.1", 0, catalogs, preferences, true)) {
+            var settings = client.send(HttpRequest.newBuilder(web.uri().resolve("api/settings")).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertTrue(settings.body().contains("\"portFromCommandLine\":true") && settings.body().endsWith("\"restartNeeded\":false}"),
+                    settings.body());
+        }
     }
 
     @Test

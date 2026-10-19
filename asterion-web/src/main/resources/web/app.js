@@ -677,5 +677,49 @@ $('astap-install').addEventListener('click', async () => {
     await loadAstap();
 });
 
+// --- the port of the web interface, saved for the next time it starts ---
+
+async function loadSettings() {
+    const response = await fetch('api/settings');
+    if (!response.ok) return;
+    const settings = await response.json();
+    $('port').value = settings.port;
+    showSettings(settings);
+}
+
+function showSettings(settings, saved) {
+    const state = $('port-state');
+    state.classList.remove('error');
+    const address = port => `${location.protocol}//${location.hostname}:${port}/`;
+    if (settings.portFromCommandLine) {
+        state.textContent = (saved ? `Saved: port ${settings.port} will be used when the web interface starts without the --port option. ` : '')
+            + `It was started with --port ${settings.currentPort}, which takes precedence.`;
+    } else if (settings.restartNeeded) {
+        state.textContent = `Saved: restart the web interface to use port ${settings.port}. It will then be at ${address(settings.port)}`;
+    } else {
+        state.textContent = saved ? `Saved: the web interface already uses port ${settings.port}.` : '';
+    }
+}
+
+// the field is in the form of the image: Enter saves the port, rather than solving the image
+$('port').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        $('port-save').click();
+    }
+});
+
+$('port-save').addEventListener('click', async () => {
+    const response = await fetch('api/settings?port=' + encodeURIComponent($('port').value), {method: 'POST'});
+    const data = await response.json();
+    if (response.ok) {
+        showSettings(data, true);
+    } else {
+        $('port-state').textContent = data.error;
+        $('port-state').classList.add('error');
+    }
+});
+
 loadCatalogs();
 loadAstap();
+loadSettings();
