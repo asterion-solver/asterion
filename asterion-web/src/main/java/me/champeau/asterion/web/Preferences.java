@@ -20,14 +20,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.OptionalInt;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.Properties;
 
 /**
  * The preferences of the web interface which are set from the interface itself, kept in a
- * properties file: the port the server listens on when it starts.
+ * properties file: the port the server listens on when it starts, and the installed catalogs
+ * which aren't used.
  */
 final class Preferences {
     private static final String PORT = "port";
+    private static final String DISABLED_CATALOGS = "disabled-catalogs";
 
     private final Path file;
 
@@ -67,6 +71,29 @@ final class Preferences {
         }
         var properties = load();
         properties.setProperty(PORT, Integer.toString(port));
+        save(properties);
+    }
+
+    /** The names of the installed catalogs which aren't used to solve. */
+    synchronized Set<String> disabledCatalogs() {
+        var disabled = new TreeSet<String>();
+        var value = load().getProperty(DISABLED_CATALOGS, "");
+        for (var name : value.split(",")) {
+            if (!name.isBlank()) {
+                disabled.add(name.trim());
+            }
+        }
+        return disabled;
+    }
+
+    /** Saves the names of the installed catalogs which aren't used to solve. */
+    synchronized void saveDisabledCatalogs(Set<String> names) throws IOException {
+        var properties = load();
+        properties.setProperty(DISABLED_CATALOGS, String.join(",", new TreeSet<>(names)));
+        save(properties);
+    }
+
+    private void save(Properties properties) throws IOException {
         Files.createDirectories(file.getParent());
         // written aside, then moved: the file is never half written
         var temp = Files.createTempFile(file.getParent(), "web-", ".properties");

@@ -80,12 +80,21 @@ function gaiaVariants(available) {
 function catalogRow(name, description, installed, running) {
     const row = element('tr');
     row.append(element('td', name), element('td', description, 'muted'));
-    row.append(element('td', running ? 'Installing…' : installed ? `Installed, ${size(installed.size)}` : 'Not installed'));
-    const action = element('td');
+    const status = running ? 'Installing…' : !installed ? 'Not installed'
+        : `${installed.enabled ? 'Installed' : 'Disabled'}, ${size(installed.size)}`;
+    row.append(element('td', status, installed && !installed.enabled ? 'muted' : undefined));
+    const action = element('td', undefined, 'actions');
     if (!running) {
         const button = element('button', installed ? 'Reinstall' : 'Install');
         button.addEventListener('click', () => install(name));
         action.append(button);
+        if (installed) {
+            // a disabled catalog stays installed, but isn't used to solve
+            const toggle = element('button', installed.enabled ? 'Disable' : 'Enable');
+            toggle.title = installed.enabled ? 'Stop using this catalog to solve images, without removing it' : 'Use this catalog to solve images again';
+            toggle.addEventListener('click', () => enable(name, !installed.enabled));
+            action.append(' ', toggle);
+        }
     }
     row.append(action);
     return row;
@@ -108,6 +117,14 @@ function installationView(installation) {
         view.append(element('div', installation.message, 'muted'));
     }
     return view;
+}
+
+async function enable(name, enabled) {
+    const response = await fetch(`api/enable?name=${encodeURIComponent(name)}&enabled=${enabled}`, {method: 'POST'});
+    if (!response.ok) {
+        alert((await response.json()).error);
+    }
+    await loadCatalogs();
 }
 
 async function install(name) {

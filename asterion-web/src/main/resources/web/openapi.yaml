@@ -336,6 +336,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/enable:
+    post:
+      tags: [catalogs]
+      operationId: enableCatalog
+      summary: Enables or disables an installed catalog
+      description: |
+        A disabled catalog stays installed, but isn't used to solve: for example to keep a dense
+        catalog for small fields without loading it for every image. The choice is saved in
+        `~/.asterion/web.properties`.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The name of an installed catalog.
+          schema:
+            type: string
+          example: gaia-500
+        - name: enabled
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: The catalogs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalogs"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
   /api/astap:
     get:
       tags: [interface]
@@ -805,7 +836,7 @@ components:
           format: double
     InstalledCatalog:
       type: object
-      required: [name, size]
+      required: [name, size, enabled]
       properties:
         name:
           type: string
@@ -813,6 +844,9 @@ components:
           type: integer
           format: int64
           description: The size of the index file, in bytes.
+        enabled:
+          type: boolean
+          description: Whether the catalog is used to solve, see `POST /api/enable`.
     AvailableCatalog:
       type: object
       required: [name, description, installed]

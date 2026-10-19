@@ -32,30 +32,87 @@ import java.util.TreeSet;
 
 /**
  * The catalogs of the web interface: the ones which are installed, the installations in progress,
- * and the solver which uses the installed ones.
+ * and the solver which uses the installed ones, but the ones which were disabled in the
+ * preferences.
  */
 final class CatalogService {
     private final Path directory;
+    private final Preferences preferences;
     private final Map<String, Installation> installations = new LinkedHashMap<>();
     private PlateSolver solver;
 
-    CatalogService(Path directory) {
+    CatalogService(Path directory, Preferences preferences) {
         this.directory = directory;
+        this.preferences = preferences;
     }
 
     Path directory() {
         return directory;
     }
 
-    /** The solver, with all the installed catalogs, or null if none is installed. */
+    /** The solver, with the installed catalogs which are enabled, or null if there is none. */
     synchronized PlateSolver solver() throws IOException {
         if (solver == null) {
-            var files = Catalogs.installed(directory);
+            var files = enabledFiles();
             if (!files.isEmpty()) {
                 solver = PlateSolver.open(files.toArray(Path[]::new));
             }
         }
         return solver;
+    }
+
+    /**
+     * The solver.
+     *
+     * @throws IllegalStateException if no catalog is installed, or none is enabled
+     */
+    synchronized PlateSolver requireSolver() throws IOException {
+        var solver = solver();
+        if (solver == null) {
+            if (Catalogs.installed(directory).isEmpty()) {
+                throw new IllegalStateException("No catalog is installed in " + directory + ": install one first");
+            }
+            throw new IllegalStateException("No catalog is enabled: enable one of the installed catalogs");
+        }
+        return solver;
+    }
+
+    /** The files of the installed catalogs which aren't disabled. */
+    private List<Path> enabledFiles() throws IOException {
+        var disabled = preferences.disabledCatalogs();
+        var files = new ArrayList<Path>();
+        for (var file : Catalogs.installed(directory)) {
+            if (!disabled.contains(nameOf(file))) {
+                files.add(file);
+            }
+        }
+        return files;
+    }
+
+    private static String nameOf(Path file) {
+        var name = file.getFileName().toString();
+        return name.substring(0, name.length() - Catalogs.EXTENSION.length());
+    }
+
+    /**
+     * Enables or disables an installed catalog: a disabled catalog stays installed, but isn't
+     * used to solve. The choice is kept in the preferences.
+     *
+     * @throws IllegalArgumentException if the catalog isn't installed
+     */
+    synchronized void setEnabled(String name, boolean enabled) throws IOException {
+        var installed = Catalogs.installed(directory).stream().map(CatalogService::nameOf).toList();
+        if (!installed.contains(name)) {
+            throw new IllegalArgumentException("The catalog " + name + " isn't installed");
+        }
+        var disabled = preferences.disabledCatalogs();
+        if (enabled) {
+            disabled.remove(name);
+        } else {
+            disabled.add(name);
+        }
+        preferences.saveDisabledCatalogs(disabled);
+        solver = null;
     }
 
     /**
@@ -70,10 +127,7 @@ final class CatalogService {
      * @return the stars, as (right ascension, declination, level), the level telling their brightness
      */
     Json stars(String index, double raDeg, double decDeg, double radiusDeg, int count) throws IOException {
-        var solver = solver();
-        if (solver == null) {
-            throw new IllegalStateException("No catalog is installed in " + directory + ": install one first");
-        }
+        var solver = requireSolver();
         var catalog = solver.indexes().stream()
                 .filter(i -> index == null || i.name().equals(index))
                 .findFirst()
@@ -118,11 +172,11 @@ final class CatalogService {
     synchronized Json describe() throws IOException {
         var installed = Json.array();
         var names = new TreeSet<String>();
+        var disabled = preferences.disabledCatalogs();
         for (var file : Catalogs.installed(directory)) {
-            var name = file.getFileName().toString();
-            name = name.substring(0, name.length() - Catalogs.EXTENSION.length());
+            var name = nameOf(file);
             names.add(name);
-            installed.add(Json.object().field("name", name).field("size", Files.size(file)));
+            installed.add(Json.object().field("name", name).field("size", Files.size(file)).field("enabled", !disabled.contains(name)));
         }
         var available = Json.array();
         for (var descriptor : Catalogs.available()) {

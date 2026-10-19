@@ -30,8 +30,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.TreeSet;
 
@@ -86,6 +88,34 @@ class WebServerTest {
         assertTrue(sky.body().contains("\"Ori\":\"Orion\""));
         assertEquals(404, get("/secret.txt").statusCode());
         assertEquals(404, get("/web/../../etc/passwd").statusCode());
+    }
+
+    @Test
+    void disablesInstalledCatalogs(@TempDir Path home) throws Exception {
+        server.close();
+        var preferences = new Preferences(home.resolve("web.properties"));
+        server = WebServer.start("127.0.0.1", 0, catalogs, preferences, true);
+        Files.writeString(catalogs.resolve("gaia-500" + Catalogs.EXTENSION), "a fake index");
+        var listed = get("/api/catalogs").body();
+        assertTrue(listed.contains("{\"name\":\"gaia-500\",\"size\":12,\"enabled\":true}"), listed);
+
+        var disabled = post("/api/enable?name=gaia-500&enabled=false", new byte[0]);
+        assertEquals(200, disabled.statusCode());
+        assertTrue(disabled.body().contains("{\"name\":\"gaia-500\",\"size\":12,\"enabled\":false}"), disabled.body());
+        assertEquals(Set.of("gaia-500"), preferences.disabledCatalogs());
+        // a disabled catalog isn't used to solve
+        var noCatalog = post("/api/solve?name=x.png", new byte[0]);
+        assertEquals(409, noCatalog.statusCode());
+        assertTrue(noCatalog.body().startsWith("{\"error\":\"No catalog is enabled"), noCatalog.body());
+
+        var enabled = post("/api/enable?name=gaia-500&enabled=true", new byte[0]);
+        assertEquals(200, enabled.statusCode());
+        assertTrue(enabled.body().contains("\"enabled\":true"), enabled.body());
+        assertEquals(Set.of(), preferences.disabledCatalogs());
+
+        assertEquals(400, post("/api/enable?name=tycho2&enabled=false", new byte[0]).statusCode());
+        assertEquals(400, post("/api/enable?name=gaia-500&enabled=maybe", new byte[0]).statusCode());
+        assertEquals(400, get("/api/enable?name=gaia-500&enabled=false").statusCode());
     }
 
     @Test

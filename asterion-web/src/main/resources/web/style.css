@@ -230,3 +230,6 @@ svg.sky { width: 100%; height: auto; display: block; }
 .sky-object { fill: none; stroke: #ffc45c; stroke-width: 1.2; stroke-dasharray: 3 2; }
 .sky-object-label { fill: #ffc45c; font-size: 12px; text-anchor: middle; }
 .sky-compass { fill: rgba(255, 255, 255, 0.6); font-size: 14px; font-weight: 600; text-anchor: middle; }
+
+/* the buttons of a catalog stay on one line */
+td.actions { white-space: nowrap; }

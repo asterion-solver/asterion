@@ -191,7 +191,8 @@ Press Ctrl+C to stop
 Open the address in a browser. `--port` changes the port (0 for any free one), `--catalog-dir` the directory
 of the catalogs. The port can also be chosen in the options of the page, which saves it in
 `~/.asterion/web.properties` for the next start; `--port` takes precedence over it. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
-the network, without any access control.
+the network, without any access control. An installed catalog can be disabled from the page, and enabled again:
+it stays on disk, but isn't used to solve, which is saved in the same file.
 
 In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
 the next; other browsers decide for themselves. That picker refuses symbolic links: the page then offers the

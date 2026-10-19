@@ -104,7 +104,7 @@ public final class WebServer implements AutoCloseable {
     static WebServer start(String host, int port, Path catalogDirectory, Preferences preferences,
                            boolean portFromCommandLine) throws IOException {
         var server = HttpServer.create(new InetSocketAddress(host, port), 0);
-        var web = new WebServer(server, new CatalogService(catalogDirectory),
+        var web = new WebServer(server, new CatalogService(catalogDirectory, preferences),
                 new SolvedImages(KEPT_IMAGES, KEPT_BYTES, KEPT_FOR, Clock.systemUTC()), preferences, portFromCommandLine);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         web.routes().forEach((path, route) -> server.createContext(path, web.handler(route)));
@@ -121,6 +121,7 @@ public final class WebServer implements AutoCloseable {
         var routes = new LinkedHashMap<String, Route>();
         routes.put("/api/catalogs", this::catalogs);
         routes.put("/api/install", this::install);
+        routes.put("/api/enable", this::enable);
         routes.put("/api/solve", this::solve);
         routes.put("/api/stars", this::stars);
         routes.put("/api/download", this::download);
@@ -216,14 +217,22 @@ public final class WebServer implements AutoCloseable {
         send(exchange, 202, catalogs.describe().field("version", version()));
     }
 
+    private void enable(HttpExchange exchange) throws IOException {
+        expect(exchange, "POST");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var enabled = request.parameter("enabled");
+        if (!"true".equals(enabled) && !"false".equals(enabled)) {
+            throw new IllegalArgumentException("enabled must be true or false");
+        }
+        catalogs.setEnabled(request.fileName(), Boolean.parseBoolean(enabled));
+        send(exchange, 200, catalogs.describe().field("version", version()));
+    }
+
     private void solve(HttpExchange exchange) throws IOException {
         expect(exchange, "POST");
         var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
         var options = request.options();
-        var solver = catalogs.solver();
-        if (solver == null) {
-            throw new IllegalStateException("No catalog is installed in " + catalogs.directory() + ": install one first");
-        }
+        var solver = catalogs.requireSolver();
         // images are read from files: the name keeps the extension, which tells compressed FITS files
         var file = Files.createTempFile("asterion-", "-" + request.fileName());
         try {
