@@ -229,6 +229,11 @@ Its API is what the page uses, which other programs can call too. Its definition
 | `GET /api/openapi.yaml` | the definition of the API |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
 
+## PixInsight
+
+A script solves the active image of PixInsight with Asterion and writes the solution in it, where
+PixInsight's own tools find it: see [integrations/pixinsight](integrations/pixinsight/README.md).
+
 ## How it works
 
 1. **Star extraction**. The background of the image and its noise are estimated, then stars are detected
