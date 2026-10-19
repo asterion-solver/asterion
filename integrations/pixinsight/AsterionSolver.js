@@ -27,7 +27,7 @@
  */
 
 #engine v8
-#feature-id    Asterion > Asterion Solver
+#feature-id    AsterionSolver : Astrometry > Asterion Solver
 #feature-info  Solves the active image blindly with Asterion Solver, in a fraction of a second, \
                and writes the astrometric solution in the image.
 #script-id     AsterionSolver

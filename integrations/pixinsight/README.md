@@ -9,11 +9,13 @@ Solution, AnnotateImage or MosaicByCoordinates.
 1. Install Asterion Solver and download a catalog, see the [README](../../README.md): the `asterion`
    executable must be in the `PATH`, or its path given in the dialog of the script.
 2. In PixInsight, Script > Feature Scripts..., Add, and select this directory (`integrations/pixinsight`).
-   The script appears in Script > Asterion > Asterion Solver.
+   The script appears in Script > Astrometry > Asterion Solver, next to ImageSolver, and stays there: the
+   directory is remembered from one session to the next. After updating the script, Script > Feature
+   Scripts..., Regenerate, picks the changes up.
 
 ## Usage
 
-Run Script > Asterion > Asterion Solver, select the image to solve, and click Solve. The console shows the
+Run Script > Astrometry > Asterion Solver, select the image to solve, and click Solve. The console shows the
 solution, and Image > Astrometric Solution describes it. The script works on any image, linear or
 stretched, mono or color, with or without a position in its keywords: the search is blind, and the
 position, when there is one, only makes it a little faster.
