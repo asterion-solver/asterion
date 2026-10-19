@@ -43,7 +43,10 @@ final class Hypothesis {
     double quadY;
     /** Sum of the squared distances of the stars of the quad to their centroid, in pixels. */
     double quadR2;
+    /** The stars of the quad, in the index. */
     final int[] stars = new int[4];
+    /** The stars of the quad, in the image, in the same order. */
+    final int[] imageStars = new int[4];
     double logOdds;
 
     /**

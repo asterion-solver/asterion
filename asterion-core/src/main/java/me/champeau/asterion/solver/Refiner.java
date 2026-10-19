@@ -160,7 +160,9 @@ final class Refiner {
                     Math.sqrt(chord2) / Sphere.ARCSEC));
         }
         var rmsArcsec = Math.sqrt(sum / pairs) / Sphere.ARCSEC;
-        if (doubtful(pairs, refs, rmsArcsec / (wcs.pixelScale()), h.logOdds)) {
+        // the pairs which stars of the image scattered at random would make with the catalog stars
+        var chancePairs = refs * Math.min(1, count * Math.PI * matchRadius * matchRadius / ((double) width * height));
+        if (doubtful(pairs, refs, rmsArcsec / (wcs.pixelScale()), h.logOdds, chancePairs)) {
             return null;
         }
         wcs = WcsFitter.withInverse(wcs, width, height);
@@ -173,19 +175,29 @@ final class Refiner {
     /**
      * Tells if a solution is a false match. Images of the Moon or of planets have hundreds of
      * "stars", among which a dense region of the catalog finds a match now and then: such
-     * solutions match few of the catalog stars of their field, with poor residuals or low odds.
-     * Real solutions match most of the catalog stars of a small field, and in a large field
-     * their residuals are small or their odds overwhelming.
+     * solutions match few of the catalog stars of their field, with poor residuals or low odds,
+     * and hardly more than stars scattered at random would. Real solutions match most of the
+     * catalog stars of a small field, and in a large field their residuals are small or their odds
+     * overwhelming. In landscape images, the foreground hides most of the catalog stars, but the
+     * stars of the sky match hundreds of times more catalog stars than chance would.
      *
      * @param pairs the number of stars matched with the catalog
      * @param catalogStars the number of catalog stars in the image
      * @param rmsPixels the residuals of the matched stars, in pixels
      * @param logOdds the odds of the hypothesis
+     * @param chancePairs the number of pairs which stars of the image scattered at random would make
      */
-    static boolean doubtful(int pairs, int catalogStars, double rmsPixels, double logOdds) {
+    static boolean doubtful(int pairs, int catalogStars, double rmsPixels, double logOdds, double chancePairs) {
+        if (pairs >= CONVINCING_PAIRS && pairs >= CONVINCING_CHANCE_FACTOR * chancePairs) {
+            return false;
+        }
         return pairs < DOUBTFUL_MATCHED_FRACTION * catalogStars && (rmsPixels > DOUBTFUL_RMS_PIXELS || logOdds < CONVINCING_LOG_ODDS);
     }
 
+    /** Solutions which match this many stars, far more than chance would, are convincing, see {@link #doubtful}. */
+    private static final int CONVINCING_PAIRS = 30;
+    /** How many times more pairs than chance would make convince, see {@link #doubtful}. */
+    private static final double CONVINCING_CHANCE_FACTOR = 20;
     /** Solutions which match a smaller share of the catalog stars of their field are false matches, unless convincing. */
     private static final double DOUBTFUL_MATCHED_FRACTION = 0.2;
     /** Residuals beyond this many pixels don't make a solution with few matches convincing. */

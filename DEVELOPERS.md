@@ -57,7 +57,12 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
 
 ## Project structure
 
-- `asterion-core`: the library. Its table of deep sky objects (Messier, NGC, IC, Sharpless, LBN, LDN) is generated
+- `asterion-core`: the library. The search is in the `solver` package: `PlateSolver` tries stages of searches,
+  from the quickest to the most tolerant, `QuadSearch` matches the quads of the image with the ones of the
+  index and `Refiner` fits the solution; `WideField` searches the images of wide angle lenses, whose
+  projection stretches the shapes of quads away from the center, in a stereographic projection of the image
+  for a range of focal lengths, with the quads of the index which are wide enough, which `index.WideQuads`
+  keeps in a file next to the index. Its table of deep sky objects (Messier, NGC, IC, Sharpless, LBN, LDN) is generated
   from OpenNGC and VizieR by
   `asterion-core/src/dso/GenerateDeepSkyObjects.java`, see [its README](asterion-core/src/dso/README.md). Its
   tests solve real images against a small index of their fields, see

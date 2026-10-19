@@ -103,6 +103,11 @@ solves fields which are wider than its minimum: one catalog is enough.
 These limits were measured by solving fields of the Digitized Sky Survey blindly, at two places of the sky.
 Images with fewer stars, such as very short exposures, may need a wider field.
 
+There is no upper limit: images taken with wide angle lenses solve too, up to about 130° across, including
+landscapes where the sky is above a foreground. The first time such an image is searched, the quads of each
+catalog which are wide enough for it are gathered in a small file next to its index, `<catalog>.astx.wide`,
+which takes a second; the file is used from then on, and built again if the catalog is updated.
+
 The longest focal length each catalog handles, for some common sensors, reducers and Barlow lenses included:
 
 | Sensor (shorter side)        | Standard (`tycho2`) | High (`gaia-500`) | Very high (`gaia-2000`) |
@@ -236,7 +241,10 @@ Its API is what the page uses, which other programs can call too. Its definition
    contains millions of such groups, built from the brightest stars of each region of the sky at all
    scales, and those of the image are looked up in it, brightest stars first, by all the processors at
    once: each one searches its share of the stars, and all stop as soon as one has found the image.
-   Neighbouring stars which must be in the image too reject most false matches immediately.
+   Neighbouring stars which must be in the image too reject most false matches immediately. Images taken
+   with wide angle lenses stretch the shapes of these groups away from their center, so when nothing else
+   works, the sharpest stars are moved to a stereographic projection of the image, which keeps shapes, for a
+   range of focal lengths, and a match tells the exact focal length and where the camera was pointed.
 3. **Verification**. Each match is a hypothesis about where the image is. Catalog stars are compared with
    the stars of the image until the odds that the match is right reach a billion to one, or get too low.
 4. **Refinement**. All the stars of the image are matched with the deepest catalog, with proper motions

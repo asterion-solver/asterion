@@ -95,6 +95,8 @@ public final class StarIndex {
     private final RingGrid[] grids;
     private final int[] levelFirstStar;
     private final long[] levelCellStartOffset;
+    /** The table of the quads of wide fields, built the first time a wide field is searched. */
+    private volatile WideQuads wideQuads;
 
     private StarIndex(Path path, MemorySegment data) throws IOException {
         this.path = path;
@@ -179,6 +181,21 @@ public final class StarIndex {
             var segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.ofAuto());
             return new StarIndex(path, segment);
         }
+    }
+
+    /** The quads which are wide enough for the search of wide fields, see {@link WideQuads}. */
+    public WideQuads wideQuads() {
+        var wide = wideQuads;
+        if (wide == null) {
+            synchronized (this) {
+                wide = wideQuads;
+                if (wide == null) {
+                    wide = WideQuads.of(this);
+                    wideQuads = wide;
+                }
+            }
+        }
+        return wide;
     }
 
     public Path path() {

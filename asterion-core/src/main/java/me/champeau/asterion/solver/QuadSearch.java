@@ -15,8 +15,10 @@
  */
 package me.champeau.asterion.solver;
 
+import me.champeau.asterion.image.StarList;
 import me.champeau.asterion.index.QuadCode;
 import me.champeau.asterion.index.StarIndex;
+import me.champeau.asterion.index.WideQuads;
 import me.champeau.asterion.math.Sphere;
 import me.champeau.asterion.math.TangentPlane;
 
@@ -45,6 +47,10 @@ final class QuadSearch {
         final double years;
         final double minPixels;
         final double maxPixels;
+        /** For wide fields, the verifier of hypotheses in the pixels of the image, see {@link #wide}. */
+        Verifier pixelVerifier;
+        /** For wide fields, the quads which are looked up, see {@link #wide}. */
+        WideQuads wide;
 
         Target(StarIndex index, Verifier verifier, double years, double minPixels, double maxPixels) {
             this.index = index;
@@ -80,6 +86,13 @@ final class QuadSearch {
     private final double maxResidualFactor;
     private final long deadline;
     private final Hypothesis hypothesis = new Hypothesis();
+    /** The verified hypothesis: the similarity of the quad, or for wide fields the camera, see {@link #wide}. */
+    private Hypothesis result;
+    /** For wide fields, the focal length of the image, in pixels, or 0. */
+    private double focal;
+    /** For wide fields, the stars in the pixels of the image, in the order of the stars of the search. */
+    private double[] pixelX;
+    private double[] pixelY;
     private final double[] starVec = new double[12];
     private final double[] tmp = new double[3];
     private final double[] xi = new double[4];
@@ -164,6 +177,23 @@ final class QuadSearch {
     }
 
     /**
+     * Searches a wide field: the stars of the search are where the stereographic projection of
+     * the image puts them for this focal length, see {@link WideField}, and the hypotheses are
+     * verified in the pixels of the image, with the exact model of the camera.
+     *
+     * @param pixels the stars in the pixels of the image, in the order of the stars of the search
+     */
+    void wide(double focal, StarList pixels) {
+        this.focal = focal;
+        this.pixelX = pixels.x();
+        this.pixelY = pixels.y();
+        for (var target : targets) {
+            target.pixelVerifier = new Verifier(target.index, pixelX, pixelY, Math.min(n, 200), width, height, target.years);
+            target.wide = target.index.wideQuads();
+        }
+    }
+
+    /**
      * @return a verified hypothesis, or null if none was found
      */
     Hypothesis run() {
@@ -209,7 +239,7 @@ final class QuadSearch {
                         for (var mem = members[base + wd]; mem != 0; mem &= mem - 1) {
                             var m = (wd << 6) + Long.numberOfTrailingZeros(mem);
                             if (mine && tryQuad(i, j, m, nn, d2)) {
-                                return hypothesis;
+                                return result;
                             }
                         }
                     }
@@ -248,7 +278,7 @@ final class QuadSearch {
                             for (; mem2 != 0; mem2 &= mem2 - 1) {
                                 var m2 = (w2 << 6) + Long.numberOfTrailingZeros(mem2);
                                 if (mine && tryQuad(i, nn, m1, m2, d2)) {
-                                    return hypothesis;
+                                    return result;
                                 }
                             }
                         }
@@ -325,7 +355,8 @@ final class QuadSearch {
 
     private boolean lookup(Target target, double cx, double cy, double dx, double dy, int a, int b, int c, int d, double pixels, int sign) {
         var index = target.index;
-        var bins = target.bins;
+        var wide = target.wide;
+        var bins = wide != null ? wide.bins() : target.bins;
         var q0 = cx * Q;
         var q1 = (cy + 0.5) * Q;
         var q2 = dx * Q;
@@ -348,6 +379,22 @@ final class QuadSearch {
             for (var i1 = l1; i1 <= h1; i1++) {
                 for (var i2 = l2; i2 <= h2; i2++) {
                     var base = ((i0 * bins + i1) * bins + i2) * bins;
+                    if (wide != null) {
+                        var from = wide.cellStart(base + l3);
+                        var to = wide.cellStart(base + h3 + 1);
+                        for (var j = from; j < to; j++) {
+                            var code = wide.code(j);
+                            var e0 = (code & 0xFFFF) - q0;
+                            var e1 = ((code >>> 16) & 0xFFFF) - q1;
+                            var e2 = ((code >>> 32) & 0xFFFF) - q2;
+                            var e3 = (code >>> 48) - q3;
+                            if (e0 * e0 + e1 * e1 + e2 * e2 + e3 * e3 <= limit
+                                    && evaluate(target, wide.id(j), wide.diam(j), a, b, c, d, pixels, sign)) {
+                                return true;
+                            }
+                        }
+                        continue;
+                    }
                     var from = index.quadCellStart(base + l3);
                     var to = index.quadCellStart(base + h3 + 1);
                     for (var q = from; q < to; q++) {
@@ -356,7 +403,8 @@ final class QuadSearch {
                         var e1 = ((code >>> 16) & 0xFFFF) - q1;
                         var e2 = ((code >>> 32) & 0xFFFF) - q2;
                         var e3 = (code >>> 48) - q3;
-                        if (e0 * e0 + e1 * e1 + e2 * e2 + e3 * e3 <= limit && evaluate(target, q, a, b, c, d, pixels, sign)) {
+                        if (e0 * e0 + e1 * e1 + e2 * e2 + e3 * e3 <= limit
+                                && evaluate(target, q, index.quadDiam(q), a, b, c, d, pixels, sign)) {
                             return true;
                         }
                     }
@@ -370,17 +418,20 @@ final class QuadSearch {
      * Evaluates the alignment suggested by an index quad which has the same shape as a quad of
      * the image.
      *
+     * @param diam the diameter of the index quad, in radians
      * @param sign 1 if the image has the same handedness as the tangent plane, -1 otherwise
      */
-    private boolean evaluate(Target target, int q, int a, int b, int c, int d, double pixels, int sign) {
+    private boolean evaluate(Target target, int q, float diam, int a, int b, int c, int d, double pixels, int sign) {
         var index = target.index;
         var years = target.years;
-        var scale = index.quadDiam(q) / pixels;
+        var scale = diam / pixels;
         if (scale < minScale || scale > maxScale) {
             return false;
         }
         candidates++;
-        if (!hasCheckStars(index.quadChecks(q), a, b, pixels, sign)) {
+        // the check stars of wide fields are too far from the quad for its similarity: the scale
+        // of the focal length has filtered the candidates instead
+        if (focal == 0 && !hasCheckStars(index.quadChecks(q), a, b, pixels, sign)) {
             return false;
         }
         for (var r : rejected) {
@@ -414,6 +465,7 @@ final class QuadSearch {
         quad[1] = b;
         quad[2] = c;
         quad[3] = d;
+        System.arraycopy(quad, 0, h.imageStars, 0, 4);
         var pmx = 0.0;
         var pmy = 0.0;
         var qmx = 0.0;
@@ -473,9 +525,23 @@ final class QuadSearch {
         h.index = index;
         h.quad = q;
         h.years = years;
-        if (!target.verifier.verify(h)) {
+        var verifier = target.verifier;
+        if (focal > 0) {
+            var camera = WideField.toPixels(starVec, pixelX, pixelY, quad, focal, width, height);
+            if (camera == null) {
+                return false;
+            }
+            System.arraycopy(h.stars, 0, camera.stars, 0, 4);
+            camera.index = index;
+            camera.quad = q;
+            camera.years = years;
+            h = camera;
+            verifier = target.pixelVerifier;
+        }
+        if (!verifier.verify(h)) {
             return false;
         }
+        result = h;
         if (found != null) {
             found.set(true);
         }

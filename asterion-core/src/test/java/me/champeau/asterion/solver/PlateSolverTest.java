@@ -20,6 +20,7 @@ import me.champeau.asterion.image.ImageHints;
 import me.champeau.asterion.image.StarList;
 import me.champeau.asterion.index.IndexBuilder;
 import me.champeau.asterion.index.IndexOptions;
+import me.champeau.asterion.math.Sphere;
 import me.champeau.asterion.progress.ProgressListener;
 import me.champeau.asterion.wcs.Wcs;
 import org.junit.jupiter.api.BeforeAll;
@@ -93,6 +94,40 @@ class PlateSolverTest {
             assertTrue(error < 0.2 * scale, "error of " + error + "\" at " + p[0] + ", " + p[1]);
         }
         assertTrue(solution.rmsArcsec() < 0.15 * scale, "RMS of " + solution.rmsArcsec() + "\"");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            // ra, dec, rotation, flipped
+            "83.8, -5.4, 30, false",
+            "200, 55, -140, true",
+    })
+    void solvesWideFieldsWithAForeground(double ra, double dec, double rotation, boolean flipped) {
+        // a wide angle lens: the corners of the image are 45° from its axis, which the lower two
+        // thirds of the image hide, like the foreground of a landscape: the stars are far from the
+        // center, where the shapes of the gnomonic projection are stretched
+        var focal = Math.hypot(WIDTH, HEIGHT) / 2;
+        var scale = 1 / (focal * Sphere.ARCSEC);
+        var truth = SyntheticSky.wcs(WIDTH, HEIGHT, ra, dec, scale, rotation, flipped);
+        var image = sky.render(truth, WIDTH, HEIGHT, 11);
+        var random = new Random(3);
+        var horizon = (int) (0.35 * HEIGHT);
+        for (var y = horizon; y < HEIGHT; y++) {
+            for (var x = 0; x < WIDTH; x++) {
+                image.data()[y * WIDTH + x] = (float) (900 + 8 * random.nextGaussian());
+            }
+        }
+        var result = solver.solve(image, ImageHints.none(), SolverOptions.defaults());
+        assertTrue(result.solved(), "not solved with " + result.stars().size() + " stars");
+        var solution = result.solution().orElseThrow();
+        assertEquals(scale, solution.pixelScale(), scale * 1e-3);
+        assertEquals(flipped, solution.flipped());
+        assertEquals(0, angleDifference(rotation, solution.rotationDeg()), 0.02);
+        assertTrue(solution.matchedStars() >= 10);
+        for (var p : new double[][]{{0, 0}, {WIDTH - 1, 0}, {WIDTH / 2.0, 0}, {WIDTH / 4.0, horizon - 1}, {WIDTH - 1, horizon - 1}}) {
+            var error = SyntheticSky.separation(truth, solution.wcs(), p[0], p[1]);
+            assertTrue(error < 0.2 * scale, "error of " + error + "\" at " + p[0] + ", " + p[1]);
+        }
     }
 
     @Test
@@ -274,17 +309,21 @@ class PlateSolverTest {
 
     @Test
     void rejectsFalseMatchesOfDenseFields() {
-        // the Moon: hundreds of "stars", few of the catalog stars of the region matched, poorly
-        assertTrue(Refiner.doubtful(150, 2750, 3.8, 27));
-        assertTrue(Refiner.doubtful(54, 319, 3.2, 74));
-        assertTrue(Refiner.doubtful(9, 886, 1.2, 21));
+        // the Moon: hundreds of "stars", few of the catalog stars of the region matched, poorly,
+        // hardly more than chance would
+        assertTrue(Refiner.doubtful(150, 2750, 3.8, 27, 100));
+        assertTrue(Refiner.doubtful(54, 319, 3.2, 74, 12));
+        assertTrue(Refiner.doubtful(9, 886, 1.2, 21, 2));
         // small fields of a few catalog stars, most of them matched: real, whatever the residuals
-        assertFalse(Refiner.doubtful(18, 27, 2.9, 55));
-        assertFalse(Refiner.doubtful(12, 19, 0.7, 37));
+        assertFalse(Refiner.doubtful(18, 27, 2.9, 55, 1));
+        assertFalse(Refiner.doubtful(12, 19, 0.7, 37, 1));
         // large fields: few of the faint catalog stars match, but the residuals and the odds convince
-        assertFalse(Refiner.doubtful(300, 2000, 0.3, 500));
-        assertFalse(Refiner.doubtful(300, 2000, 1.2, 60));
-        assertTrue(Refiner.doubtful(300, 2000, 2.0, 60));
-        assertTrue(Refiner.doubtful(300, 2000, 0.5, 30));
+        assertFalse(Refiner.doubtful(300, 2000, 0.3, 500, 50));
+        assertFalse(Refiner.doubtful(300, 2000, 1.2, 60, 50));
+        assertTrue(Refiner.doubtful(300, 2000, 2.0, 60, 50));
+        assertTrue(Refiner.doubtful(300, 2000, 0.5, 30, 50));
+        // landscapes: the foreground hides most of the catalog stars, but chance wouldn't match so many
+        assertFalse(Refiner.doubtful(281, 1527, 0.34, 49, 0.25));
+        assertTrue(Refiner.doubtful(25, 1527, 0.34, 20, 0.25));
     }
 }

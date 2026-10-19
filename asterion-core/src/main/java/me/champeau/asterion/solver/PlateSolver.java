@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ForkJoinPool;
@@ -56,10 +57,19 @@ public final class PlateSolver {
     private static final double EXTENDED_FWHM_FACTOR = 4;
     /** Detections whose light is less concentrated than this, compared to a gaussian star, aren't stars. */
     private static final double MIN_CONCENTRATION = 0.6;
+    /** The concentration of the light of point sources, see {@link #pointSources}. */
+    private static final double POINT_SOURCE_CONCENTRATION = 0.9;
+    /** Point sources are at most this number of times larger than the smallest detections, see {@link #pointSources}. */
+    private static final double POINT_SOURCE_FWHM_FACTOR = 1.5;
     /** How much stricter the detection threshold is when an image doesn't solve, for a retry. */
     private static final double RETRY_THRESHOLD_FACTOR = 2;
     /** The number of stars of the quick searches, see {@link #stages}. */
     private static final int SHALLOW_QUAD_STARS = 32;
+    /**
+     * The number of stars of the searches of wide fields, for each focal length: the brightest
+     * stars of these images are the ones of the index.
+     */
+    private static final int WIDE_FIELD_QUAD_STARS = 100;
     /**
      * The lanes of the searches, for all the indexes together, see {@link QuadSearch#lanes}: the
      * searches which succeed in a few hundred quads cost the dispatch of the lanes, a fraction of
@@ -74,6 +84,13 @@ public final class PlateSolver {
     private static final int MAX_REJECTIONS = 3;
     /** The quads and the verifications the deep search of the concentrated stars may try, see {@link #stages}. */
     private static final Budget CONCENTRATED_BUDGET = new Budget(30_000, 3_000);
+    /**
+     * The quads the search of a wide field may try for each focal length, see {@link #stages}:
+     * the fields which solve do so within a few thousand quads of their brightest stars.
+     */
+    private static final Budget WIDE_FIELD_BUDGET = new Budget(30_000, Long.MAX_VALUE);
+    /** The tolerance on the scale of the stereographic projection of a wide field, for a focal length which is tried. */
+    private static final double WIDE_FIELD_SCALE_TOLERANCE = 0.03;
     /** The relative error which is tolerated on the scale found in image files. */
     private static final double HINT_SCALE_TOLERANCE = 0.25;
 
@@ -117,7 +134,7 @@ public final class PlateSolver {
         var start = System.nanoTime();
         var stars = ownsImage ? StarDetector.detectInPlace(image, options.detection()) : StarDetector.detect(image, options.detection());
         var detectMillis = (System.nanoTime() - start) / 1e6;
-        var result = solve(stars, image.sourceWidth(), image.sourceHeight(), hints, options);
+        var result = solve(stars, image.sourceWidth(), image.sourceHeight(), hints, options, Stages.USUAL);
         var s = result.stats();
         var remaining = options.timeout().minusMillis((long) s.solveMillis());
         if (!result.solved() && !remaining.isNegative() && !remaining.isZero()) {
@@ -128,13 +145,31 @@ public final class PlateSolver {
             var detection = options.detection().withThresholdSigma(RETRY_THRESHOLD_FACTOR * options.detection().thresholdSigma());
             var fewer = StarDetector.detect(image, detection);
             detectMillis += (System.nanoTime() - retryStart) / 1e6;
-            var retry = solve(fewer, image.sourceWidth(), image.sourceHeight(), hints, options.toBuilder().timeout(remaining).build());
+            var retry = solve(fewer, image.sourceWidth(), image.sourceHeight(), hints, options.toBuilder().timeout(remaining).build(),
+                    Stages.USUAL);
             var r = retry.stats();
             s = new SolveResult.Stats(s.quads() + r.quads(), s.candidates() + r.candidates(), s.verifications() + r.verifications(), 0, 0,
                     s.solveMillis() + r.solveMillis(), r.usedHints());
             if (retry.solved()) {
                 result = retry;
                 stars = fewer;
+            }
+            remaining = options.timeout().minusMillis((long) s.solveMillis());
+        }
+        if (!result.solved() && !remaining.isNegative() && !remaining.isZero()) {
+            // Images taken with wide angle lenses, last: the stars of landscapes are faint but
+            // sharp points among the bright lights of the foreground, so they are ranked by peak
+            var wideStart = System.nanoTime();
+            var points = StarDetector.detect(image, options.detection().withPeakRanking(true));
+            detectMillis += (System.nanoTime() - wideStart) / 1e6;
+            var wide = solve(points, image.sourceWidth(), image.sourceHeight(), hints, options.toBuilder().timeout(remaining).build(),
+                    Stages.WIDE_FIELDS);
+            var r = wide.stats();
+            s = new SolveResult.Stats(s.quads() + r.quads(), s.candidates() + r.candidates(), s.verifications() + r.verifications(), 0, 0,
+                    s.solveMillis() + r.solveMillis(), r.usedHints());
+            if (wide.solved()) {
+                result = wide;
+                stars = points;
             }
         }
         return new SolveResult(result.solution().orElse(null), stars,
@@ -143,17 +178,42 @@ public final class PlateSolver {
                 result.pixelSizeMicrons().orElse(Double.NaN));
     }
 
+    /** Which stages a search runs, see {@link #stages}. */
+    private enum Stages {
+        /** The searches of the stars by brightness. */
+        USUAL,
+        /** The searches of wide fields, see {@link WideField}. */
+        WIDE_FIELDS,
+        /** All of them: for lists of stars, which can't be detected again. */
+        ALL
+    }
+
     /**
      * A search: the stars quads are made of, how many of them, starting with the brightest, and
      * the tolerance on the codes of quads.
+     *
+     * @param focal for the search of a wide field, the focal length which is tried, in pixels, see
+     * {@link WideField}, or 0
+     * @param pixels for the search of a wide field, the stars in the pixels of the image, in the
+     * same order as the ones of the list, which are where the stereographic projection puts them
      */
     private record Stage(
             StarList list,
             int maxStars,
             double tolerance,
-            Budget budget) {
+            Budget budget,
+            double focal,
+            StarList pixels) {
         Stage(StarList list, int maxStars, double tolerance) {
             this(list, maxStars, tolerance, Budget.UNLIMITED);
+        }
+
+        Stage(StarList list, int maxStars, double tolerance, Budget budget) {
+            this(list, maxStars, tolerance, budget, 0, list);
+        }
+
+        Stage with(int maxStars, double tolerance) {
+            return new Stage(list, maxStars, tolerance, budget, focal, pixels);
         }
     }
 
@@ -182,22 +242,42 @@ public final class PlateSolver {
      *     <li>The stars which aren't too large, at full depth.</li>
      *     <li>The same, with the tolerance of the options: for images taken with short focal
      *     lengths, which have many bright stars, so it doesn't need to go as deep.</li>
+     *     <li>The point sources with the highest peaks, moved to where they would be if the
+     *     image had been taken with a wide angle lens of each of a range of focal lengths, see
+     *     {@link WideField}: for images, these come after the retry with a stricter detection,
+     *     with stars detected for them.</li>
      * </ol>
      */
-    private static List<Stage> stages(StarList stars, SolverOptions options) {
-        var compact = compactStars(stars);
-        var concentrated = concentratedStars(compact);
+    private static List<Stage> stages(StarList stars, int width, int height, SolverOptions options, Stages which) {
         var stages = new ArrayList<Stage>();
-        stages.add(new Stage(compact, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
-        stages.add(new Stage(stars, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
-        if (concentrated != compact) {
-            stages.add(new Stage(concentrated, options.maxQuadStars(), STRICT_CODE_TOLERANCE, CONCENTRATED_BUDGET));
+        if (which != Stages.WIDE_FIELDS) {
+            var compact = compactStars(stars);
+            var concentrated = concentratedStars(compact);
+            stages.add(new Stage(compact, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
+            stages.add(new Stage(stars, SHALLOW_QUAD_STARS, STRICT_CODE_TOLERANCE));
+            if (concentrated != compact) {
+                stages.add(new Stage(concentrated, options.maxQuadStars(), STRICT_CODE_TOLERANCE, CONCENTRATED_BUDGET));
+            }
+            stages.add(new Stage(compact, options.maxQuadStars(), STRICT_CODE_TOLERANCE));
+            if (options.codeTolerance() > STRICT_CODE_TOLERANCE) {
+                stages.add(new Stage(compact, Math.max(20, options.maxQuadStars() / 2), options.codeTolerance()));
+            }
         }
-        stages.add(new Stage(compact, options.maxQuadStars(), STRICT_CODE_TOLERANCE));
-        if (options.codeTolerance() > STRICT_CODE_TOLERANCE) {
-            stages.add(new Stage(compact, Math.max(20, options.maxQuadStars() / 2), options.codeTolerance()));
+        if (which == Stages.USUAL) {
+            return distinctStages(stages);
         }
-        // the lists are the same objects when nothing was left out: such stages are the same search
+        var wideStars = Math.min(WIDE_FIELD_QUAD_STARS, options.maxQuadStars());
+        var wideTolerance = Math.max(STRICT_CODE_TOLERANCE, options.codeTolerance());
+        var points = pointSources(stars);
+        for (var focal : WideField.focalLengths(width, height)) {
+            stages.add(new Stage(WideField.stereographic(points, focal, width, height), wideStars, wideTolerance, WIDE_FIELD_BUDGET,
+                    focal, points));
+        }
+        return distinctStages(stages);
+    }
+
+    /** The stages without the repeated ones: the lists are the same objects when nothing was left out, and such stages are the same search. */
+    private static List<Stage> distinctStages(List<Stage> stages) {
         var distinct = new ArrayList<Stage>();
         for (var stage : stages) {
             if (!distinct.contains(stage)) {
@@ -224,6 +304,56 @@ public final class PlateSolver {
             keep[i] = fwhm[i] <= limit;
         }
         return select(stars, keep);
+    }
+
+    /**
+     * The point sources, the ones with the highest peak first. In landscape images, the brightest
+     * detections are lit windows, lamps, and the sky seen through foliage: they are larger than
+     * stars, or their light is spread, and outnumber them, while the stars of these images are
+     * sharp, often saturated, points which have a small flux because they are small. The peak of
+     * a detection is deduced from its flux, its size and its concentration.
+     *
+     * @return the stars themselves when too few are point sources
+     */
+    static StarList pointSources(StarList stars) {
+        var n = stars.size();
+        if (n < 4) {
+            return stars;
+        }
+        var fwhm = stars.fwhm();
+        var sorted = fwhm.clone();
+        Arrays.sort(sorted);
+        var limit = POINT_SOURCE_FWHM_FACTOR * sorted[n / 10];
+        var concentration = stars.concentration();
+        var kept = new ArrayList<Integer>();
+        for (var i = 0; i < n; i++) {
+            if (concentration[i] >= POINT_SOURCE_CONCENTRATION && fwhm[i] <= limit) {
+                kept.add(i);
+            }
+        }
+        if (kept.size() < 4) {
+            return stars;
+        }
+        var peak = new double[n];
+        for (var i : kept) {
+            peak[i] = concentration[i] * stars.flux(i) / (fwhm[i] * fwhm[i]);
+        }
+        kept.sort((a, b) -> Double.compare(peak[b], peak[a]));
+        var k = kept.size();
+        var x = new double[k];
+        var y = new double[k];
+        var flux = new float[k];
+        var f = new float[k];
+        var c = new float[k];
+        for (var j = 0; j < k; j++) {
+            var i = kept.get(j);
+            x[j] = stars.x(i);
+            y[j] = stars.y(i);
+            flux[j] = stars.flux(i);
+            f[j] = fwhm[i];
+            c[j] = concentration[i];
+        }
+        return new StarList(x, y, flux, f, c);
     }
 
     /**
@@ -335,6 +465,19 @@ public final class PlateSolver {
         var n = stage.list().size();
         var minScale = o.minScale() * Sphere.ARCSEC;
         var maxScale = o.maxScale() * Sphere.ARCSEC;
+        if (stage.focal() > 0) {
+            // the scale of the stereographic projection: the one of the focal length at the
+            // center of the image, growing towards its corners
+            var corner = Math.atan(Math.hypot(width, height) / 2 / stage.focal());
+            var cos = Math.cos(corner / 2);
+            var min = (1 - WIDE_FIELD_SCALE_TOLERANCE) / stage.focal();
+            var max = (1 + WIDE_FIELD_SCALE_TOLERANCE) / (stage.focal() * cos * cos);
+            minScale = Math.max(minScale, min);
+            maxScale = maxScale > 0 ? Math.min(maxScale, max) : max;
+            if (minScale > maxScale) {
+                return List.of();
+            }
+        }
         var radius = Math.toRadians(o.searchRadiusDeg());
         var searches = new ArrayList<QuadSearch>();
         if (PARALLEL_LANES < 2) {
@@ -343,6 +486,9 @@ public final class PlateSolver {
             search.maxQuads = stage.budget().quads();
             search.maxVerifications = stage.budget().verifications();
             search.rejected = rejected;
+            if (stage.focal() > 0) {
+                search.wide(stage.focal(), stage.pixels());
+            }
             searches.add(search);
             return searches;
         }
@@ -358,6 +504,9 @@ public final class PlateSolver {
                 search.maxQuads = stage.budget().quads() / lanes;
                 search.maxVerifications = stage.budget().verifications() / lanes;
                 search.rejected = rejected;
+                if (stage.focal() > 0) {
+                    search.wide(stage.focal(), stage.pixels());
+                }
                 searches.add(search);
             }
         }
@@ -373,6 +522,10 @@ public final class PlateSolver {
      * @param hints what is known about the image, see {@link ImageHints#none()}
      */
     public SolveResult solve(StarList stars, int width, int height, ImageHints hints, SolverOptions options) {
+        return solve(stars, width, height, hints, options, Stages.ALL);
+    }
+
+    private SolveResult solve(StarList stars, int width, int height, ImageHints hints, SolverOptions options, Stages which) {
         var start = System.nanoTime();
         var deadline = start + options.timeout().toNanos();
         var epoch = options.epoch();
@@ -390,7 +543,7 @@ public final class PlateSolver {
             options = options.toBuilder().fieldOfView(0, 0).scale(min, max).build();
         }
         var attempts = plan(hints, options);
-        var stages = stages(stars, options);
+        var stages = stages(stars, width, height, options, which);
         var quads = 0L;
         var candidates = 0L;
         var verifications = 0L;
@@ -405,7 +558,7 @@ public final class PlateSolver {
             for (var stage : stages) {
                 var maxStars = Math.min(stage.maxStars(), o.maxQuadStars());
                 var tolerance = Math.min(stage.tolerance(), o.codeTolerance());
-                var current = new Stage(stage.list(), maxStars, tolerance, stage.budget());
+                var current = stage.with(maxStars, tolerance);
                 if (current.equals(previous)) {
                     // a hinted attempt searches few stars: the stages which don't differ are skipped
                     continue;

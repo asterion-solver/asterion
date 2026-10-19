@@ -30,6 +30,8 @@ public final class StarDetector {
     /** Noise reduction factor of the smoothing kernel. */
     private static final double SMOOTHING_NOISE = 70.0 / 256;
     private static final int MAX_DEDUPE_RADIUS = 32;
+    /** How many batches of peaks may be measured to get the requested number of stars ranked by peak, see {@link #measure(Peaks, int)}. */
+    private static final int MEASUREMENT_BATCHES = 4;
     /** Pixels at this fraction of the brightest pixel of the image are saturated. */
     private static final float SATURATION = 0.95f;
 
@@ -437,78 +439,100 @@ public final class StarDetector {
             keys[i] = ((long) Float.floatToIntBits(peaks.value[i]) << 32) | i;
         }
         Arrays.sort(keys);
-        // enough peaks to get the requested number of stars, once duplicates and artifacts are removed
-        var keep = Math.min(n, Math.max(1000, 2 * options.maxStars()));
-        var sx = new double[keep];
-        var sy = new double[keep];
-        var sflux = new float[keep];
-        var sfwhm = new float[keep];
-        var sconcentration = new float[keep];
-        var ok = new boolean[keep];
+        // Enough peaks to get the requested number of stars, once duplicates and artifacts are
+        // removed. Images with a foreground have thousands of peaks in their foliage, which are
+        // duplicates of each other: when the stars are ranked by peak, for such images, more
+        // peaks are measured while a batch leaves too few stars.
+        var batch = Math.min(n, Math.max(1000, 2 * options.maxStars()));
+        var limit = options.peakRanking() ? Math.min(n, MEASUREMENT_BATCHES * batch) : batch;
+        var sx = new double[limit];
+        var sy = new double[limit];
+        var sflux = new float[limit];
+        var sfwhm = new float[limit];
+        var sconcentration = new float[limit];
+        var ok = new boolean[limit];
         var windows = ThreadLocal.withInitial(Window::new);
-        IntStream.range(0, keep).parallel().forEach(j -> {
-            var idx = peaks.index[(int) keys[n - 1 - j]];
-            var m = measure(idx % w, idx / w, windows.get());
-            if (m != null) {
-                sx[j] = m[0];
-                sy[j] = m[1];
-                sflux[j] = (float) m[2];
-                sfwhm[j] = (float) m[3];
-                sconcentration[j] = (float) m[4];
-                ok[j] = true;
-            }
-        });
-        // sort by flux, and remove duplicates
-        var order = new long[keep];
-        var m = 0;
-        for (var j = 0; j < keep; j++) {
-            if (ok[j]) {
-                order[m++] = ((long) Float.floatToIntBits(sflux[j]) << 32) | j;
-            }
-        }
-        Arrays.sort(order, 0, m);
+        var max = options.maxStars();
         var cellSize = MAX_DEDUPE_RADIUS;
         var gw = w / cellSize + 1;
         var gh = h / cellSize + 1;
         var head = new int[gw * gh];
-        Arrays.fill(head, -1);
-        var next = new int[m];
-        var max = Math.min(m, options.maxStars());
-        var ox = new double[max];
-        var oy = new double[max];
-        var oflux = new float[max];
-        var ofwhm = new float[max];
-        var oconcentration = new float[max];
+        var next = new int[limit];
+        var ox = new double[0];
+        var oy = new double[0];
+        var oflux = new float[0];
+        var ofwhm = new float[0];
+        var oconcentration = new float[0];
         var count = 0;
-        for (var r = m - 1; r >= 0 && count < max; r--) {
-            var j = (int) order[r];
-            var gx = (int) (sx[j] / cellSize);
-            var gy = (int) (sy[j] / cellSize);
-            var duplicate = false;
-            for (var yy = Math.max(0, gy - 1); yy <= Math.min(gh - 1, gy + 1) && !duplicate; yy++) {
-                for (var xx = Math.max(0, gx - 1); xx <= Math.min(gw - 1, gx + 1) && !duplicate; xx++) {
-                    for (var o = head[yy * gw + xx]; o >= 0; o = next[o]) {
-                        var dx = ox[o] - sx[j];
-                        var dy = oy[o] - sy[j];
-                        double radius = Math.clamp(ofwhm[o], 3, MAX_DEDUPE_RADIUS);
-                        if (dx * dx + dy * dy < radius * radius) {
-                            duplicate = true;
-                            break;
+        var measured = 0;
+        while (true) {
+            var to = Math.min(limit, measured + batch);
+            IntStream.range(measured, to).parallel().forEach(j -> {
+                var idx = peaks.index[(int) keys[n - 1 - j]];
+                var m = measure(idx % w, idx / w, windows.get());
+                if (m != null) {
+                    sx[j] = m[0];
+                    sy[j] = m[1];
+                    sflux[j] = (float) m[2];
+                    sfwhm[j] = (float) m[3];
+                    sconcentration[j] = (float) m[4];
+                    ok[j] = true;
+                }
+            });
+            measured = to;
+            // sort by brightness: the flux, or the peak of the gaussian star of the flux, size
+            // and concentration of the detection
+            var order = new long[measured];
+            var m = 0;
+            for (var j = 0; j < measured; j++) {
+                if (ok[j]) {
+                    var brightness = options.peakRanking() ? sconcentration[j] * sflux[j] / (sfwhm[j] * sfwhm[j]) : sflux[j];
+                    order[m++] = ((long) Float.floatToIntBits(brightness) << 32) | j;
+                }
+            }
+            Arrays.sort(order, 0, m);
+            // the brightest first, without duplicates
+            var size = Math.min(m, max);
+            ox = new double[size];
+            oy = new double[size];
+            oflux = new float[size];
+            ofwhm = new float[size];
+            oconcentration = new float[size];
+            Arrays.fill(head, -1);
+            count = 0;
+            for (var r = m - 1; r >= 0 && count < size; r--) {
+                var j = (int) order[r];
+                var gx = (int) (sx[j] / cellSize);
+                var gy = (int) (sy[j] / cellSize);
+                var duplicate = false;
+                for (var yy = Math.max(0, gy - 1); yy <= Math.min(gh - 1, gy + 1) && !duplicate; yy++) {
+                    for (var xx = Math.max(0, gx - 1); xx <= Math.min(gw - 1, gx + 1) && !duplicate; xx++) {
+                        for (var o = head[yy * gw + xx]; o >= 0; o = next[o]) {
+                            var dx = ox[o] - sx[j];
+                            var dy = oy[o] - sy[j];
+                            double radius = Math.clamp(ofwhm[o], 3, MAX_DEDUPE_RADIUS);
+                            if (dx * dx + dy * dy < radius * radius) {
+                                duplicate = true;
+                                break;
+                            }
                         }
                     }
                 }
+                if (duplicate) {
+                    continue;
+                }
+                ox[count] = sx[j];
+                oy[count] = sy[j];
+                oflux[count] = sflux[j];
+                ofwhm[count] = sfwhm[j];
+                oconcentration[count] = sconcentration[j];
+                next[count] = head[gy * gw + gx];
+                head[gy * gw + gx] = count;
+                count++;
             }
-            if (duplicate) {
-                continue;
+            if (count >= max || measured >= limit) {
+                break;
             }
-            ox[count] = sx[j];
-            oy[count] = sy[j];
-            oflux[count] = sflux[j];
-            ofwhm[count] = sfwhm[j];
-            oconcentration[count] = sconcentration[j];
-            next[count] = head[gy * gw + gx];
-            head[gy * gw + gx] = count;
-            count++;
         }
         // back to the coordinates of the source image
         for (var i = 0; i < count; i++) {
@@ -520,7 +544,6 @@ public final class StarDetector {
                 Arrays.copyOf(oconcentration, count));
     }
 
-    /** Tells if a pixel, or one of its neighbours, is as bright as the brightest pixel of the image. */
     private boolean saturated(int px, int py) {
         for (var y = py - 1; y <= py + 1; y++) {
             for (var x = px - 1; x <= px + 1; x++) {
