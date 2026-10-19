@@ -15,11 +15,16 @@
  */
 package me.champeau.asterion.cli;
 
+import me.champeau.asterion.catalog.Catalogs;
 import me.champeau.asterion.catalog.DeepSkyObjects;
+import me.champeau.asterion.index.StarIndex;
 import me.champeau.asterion.solver.Solution;
 import me.champeau.asterion.solver.SolveResult;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.function.Consumer;
@@ -166,6 +171,56 @@ final class Report {
         field(sb, "totalMillis", stats.totalMillis());
         sb.setLength(sb.length() - 1);
         sb.append("}}");
+        return sb.toString();
+    }
+
+    /**
+     * The catalogs, as JSON: the directory, the version of the program, the installed catalogs
+     * with their size and content, and the ones which can be downloaded.
+     */
+    static String catalogsJson(Path directory, List<Path> installed, List<Catalogs.Descriptor> available,
+                               String version) throws IOException {
+        var sb = new StringBuilder("{");
+        field(sb, "directory", directory.toString());
+        field(sb, "version", version);
+        sb.append("\"installed\":[");
+        var names = new HashSet<String>();
+        for (var file : installed) {
+            sb.append('{');
+            var name = file.getFileName().toString();
+            name = name.substring(0, name.length() - Catalogs.EXTENSION.length());
+            names.add(name);
+            field(sb, "name", name);
+            field(sb, "size", Files.size(file));
+            try {
+                var index = StarIndex.open(file);
+                field(sb, "stars", index.starCount());
+                field(sb, "magnitudeLimit", index.magnitudeLimit());
+                field(sb, "quads", index.quadCount());
+                field(sb, "minQuadArcmin", Math.toDegrees(index.minQuadDiam()) * 60);
+                field(sb, "maxQuadDeg", Math.toDegrees(index.maxQuadDiam()));
+            } catch (IOException e) {
+                field(sb, "error", String.valueOf(e.getMessage()));
+            }
+            sb.setLength(sb.length() - 1);
+            sb.append("},");
+        }
+        if (!installed.isEmpty()) {
+            sb.setLength(sb.length() - 1);
+        }
+        sb.append("],\"available\":[");
+        for (var descriptor : available) {
+            sb.append('{');
+            field(sb, "name", descriptor.name());
+            field(sb, "description", descriptor.description());
+            field(sb, "installed", names.contains(descriptor.name()));
+            sb.setLength(sb.length() - 1);
+            sb.append("},");
+        }
+        if (!available.isEmpty()) {
+            sb.setLength(sb.length() - 1);
+        }
+        sb.append("]}");
         return sb.toString();
     }
 

@@ -86,7 +86,7 @@ errors (no catalog installed, for example), and 130 when cancelled.
 Catalogs are downloaded already indexed, from the [releases of the catalog
 repository](https://github.com/asterion-solver/catalogs/releases). They are stored in `~/.asterion/catalogs`
 unless `--catalog-dir` or the `ASTERION_CATALOGS` environment variable says otherwise.
-`asterion --list-catalogs` shows what is installed and what is available.
+`asterion --list-catalogs` shows what is installed and what is available, as JSON with `--json`.
 
 ### Which catalog?
 

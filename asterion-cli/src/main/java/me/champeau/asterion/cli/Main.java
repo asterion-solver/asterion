@@ -250,7 +250,12 @@ public final class Main implements Callable<Integer> {
             packCatalogs(directory, console);
         }
         if (listCatalogs) {
-            listCatalogs(directory, console::println);
+            if (json) {
+                System.out.println(
+                        Report.catalogsJson(directory, Catalogs.installed(directory), Catalogs.available(), AsterionVersion.get()));
+            } else {
+                listCatalogs(directory, console::println);
+            }
         }
         if (images.isEmpty()) {
             return 0;

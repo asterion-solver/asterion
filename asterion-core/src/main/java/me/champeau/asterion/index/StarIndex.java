@@ -210,6 +210,11 @@ public final class StarIndex {
         return starCount;
     }
 
+    /** The magnitude of the faintest stars of the index. */
+    public float magnitudeLimit() {
+        return magLimit;
+    }
+
     public int quadCount() {
         return quadCount;
     }
