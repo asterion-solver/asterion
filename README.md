@@ -196,6 +196,10 @@ the name of its constellation, and the stars of the catalog around it, the ones 
 circled. The constellation lines are those of [Marc van der Sluys](https://github.com/MarcvdSluys/ConstellationLines)
 (CC BY 4.0), see [the credits of the sky data](asterion-web/third-party/sky-data.md).
 
+The result shows a thumbnail of the image, made by the browser, or by the server for the formats which
+browsers can't display, such as FITS files, once the image is solved. Hovering over it, or clicking it, shows
+the grid of coordinates, the directions of north and east, and the outlines of the deep sky objects.
+
 When the web interface runs from the archive, next to `asterion`, it offers to install the `astap` executable of
 the [ASTAP compatibility mode](#astap-compatibility-mode) there, for the programs which call ASTAP.
 
@@ -212,6 +216,7 @@ Its API is what the page uses:
 | `POST /api/install?name=gaia-500` | starts installing a catalog |
 | `POST /api/solve?name=image.fits&ra=…&dec=…&radius=…&fov=…` | solves the image sent as the body of the request, with the JSON output of `asterion --json`, its constellation, its outline on the sky and the positions of the matched stars |
 | `GET /api/download?id=…&format=fits` | a solved image, by the `download.id` of its solution: `fits` for the image with its solution, `wcs` for the header alone, `csv` for the matched stars |
+| `GET /api/thumbnail?id=…` | the thumbnail of a solved image, as a PNG file: the image reduced and stretched, the first row at the bottom when the `Asterion-Row-Order` header of the answer is `bottom-up`, like FITS files whose header doesn't say otherwise |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
 
 ## How it works

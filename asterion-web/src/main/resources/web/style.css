@@ -138,6 +138,37 @@ form.inline { display: flex; align-items: flex-end; gap: 0.75rem; margin-top: 1r
 .status.ok { color: var(--ok); }
 .status.error { color: var(--error); }
 
+.thumbnail { margin: 0.75rem 0; }
+.thumbnail .frame { position: relative; display: inline-block; max-width: 100%; cursor: pointer; }
+.thumbnail canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 480px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+.thumbnail figcaption { color: var(--muted); font-size: 0.85em; margin-top: 0.4rem; }
+
+/* the overlay of the solution, shown when the image is hovered or clicked */
+.overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    font: 600 15px system-ui, sans-serif;
+}
+.frame:hover .overlay, .frame.pinned .overlay { opacity: 1; }
+.overlay .grid { fill: none; stroke: rgba(130, 180, 255, 0.55); stroke-width: 1; }
+.overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 3px; stroke-linejoin: round; }
+.overlay .grid-label { fill: rgb(170, 205, 255); font-weight: 500; font-size: 13px; }
+.overlay .object { fill: none; stroke: rgb(255, 200, 90); stroke-width: 1.5; }
+.overlay .object-label { fill: rgb(255, 210, 120); }
+.overlay .compass { stroke: rgb(240, 240, 240); stroke-width: 2; }
+.overlay .compass-label { fill: rgb(240, 240, 240); text-anchor: middle; }
+
 .objects { margin: 0.4rem 0 0.2rem; }
 .objects .object { font-weight: 600; }
 

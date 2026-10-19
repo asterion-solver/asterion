@@ -81,10 +81,13 @@ class SolvedImagesTest {
             var second = images.keep(upload(100), "second.fits", SOLUTION);
             assertNotEquals(first, second);
 
-            // too many images: the oldest is deleted
+            Files.write(image.thumbnail(), new byte[10]);
+
+            // too many images: the oldest is deleted, with its thumbnail
             var third = images.keep(upload(100), "third.fits", SOLUTION);
             assertThrows(NoSuchElementException.class, () -> images.get(first));
             assertFalse(Files.exists(image.file()));
+            assertFalse(Files.exists(image.thumbnail()));
             images.get(second);
 
             // too large

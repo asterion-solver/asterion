@@ -113,6 +113,7 @@ class WebServerTest {
         assertEquals(404, expired.statusCode());
         assertEquals("{\"error\":\"This image isn't kept anymore: solve it again\"}", expired.body());
         assertEquals(404, get("/api/download?format=wcs").statusCode());
+        assertEquals(404, get("/api/thumbnail?id=0123456789abcdef").statusCode());
 
         // the ASTAP compatible executable can't be installed by a JVM
         var astap = get("/api/astap");

@@ -54,6 +54,10 @@ final class SolvedImages implements AutoCloseable {
             Solution solution,
             long size,
             Instant created) {
+        /** Where the thumbnail of the image is kept, once made: it is deleted with the image. */
+        Path thumbnail() {
+            return file.resolveSibling(file.getFileName() + ".thumbnail.png");
+        }
     }
 
     SolvedImages(int maxImages, long maxBytes, Duration lifetime, Clock clock) throws IOException {
@@ -114,6 +118,7 @@ final class SolvedImages implements AutoCloseable {
             iterator.remove();
             bytes -= image.size();
             Files.deleteIfExists(image.file());
+            Files.deleteIfExists(image.thumbnail());
         }
     }
 

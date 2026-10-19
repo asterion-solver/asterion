@@ -206,7 +206,12 @@ $('solve-form').addEventListener('submit', async event => {
     try {
         const response = await fetch('api/solve?' + query, {method: 'POST', body: file});
         const data = await response.json();
-        result.replaceChildren(...(response.ok ? resultView(data) : [element('div', data.error, 'status error')]));
+        const views = response.ok ? resultView(data) : [element('div', data.error, 'status error')];
+        result.replaceChildren(...views);
+        if (response.ok) {
+            // below the status, unless another image was submitted meanwhile
+            thumbnailView(file, data).then(view => view && result.contains(views[0]) && views[0].after(view));
+        }
     } catch (e) {
         result.replaceChildren(element('div', String(e), 'status error'));
     } finally {
@@ -214,6 +219,336 @@ $('solve-form').addEventListener('submit', async event => {
         button.textContent = 'Solve';
     }
 });
+
+/** The width of thumbnails, in pixels: they are shown smaller, sharp on high density screens. */
+const THUMBNAIL_WIDTH = 800;
+/** Larger files are not decoded by the browser: their decoding takes a lot of memory. */
+const THUMBNAIL_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * A thumbnail of a submitted image, with an overlay of the solution: the coordinates, the
+ * orientation and the deep sky objects. It is made once the result is shown, rather than while the
+ * image is solved, as the server often runs on the same machine, and the solution never contains
+ * it, so that the callers of the API don't pay for it. The browser makes it from the file it
+ * uploaded when it can, and asks the server for it otherwise, for FITS files for example.
+ *
+ * @return a promise of the view, or of null when there's no thumbnail
+ */
+async function thumbnailView(file, data) {
+    const picture = await browserPicture(file, data) || await serverPicture(data);
+    if (!picture) return null;
+    const {bitmap, bottomUp} = picture;
+    const canvas = element('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const frame = element('div', undefined, 'frame');
+    frame.append(canvas);
+    const figure = element('figure', undefined, 'thumbnail');
+    figure.append(frame);
+    if (data.solved) {
+        frame.append(overlay(data, canvas.width, canvas.height, bottomUp));
+        // hovering shows the overlay, and clicking keeps it, which touch screens need
+        frame.addEventListener('click', () => frame.classList.toggle('pinned'));
+        figure.append(element('figcaption', 'Hover over the image, or click it, to show its coordinates, its orientation and its objects'));
+    }
+    return figure;
+}
+
+/**
+ * The image as decoded by the browser, when it can: JPEG, PNG... Browsers turn photos as their
+ * EXIF tags say, which the solver doesn't: a thumbnail which doesn't have the shape of the solved
+ * image isn't the image the solution describes, and the one of the server is used instead.
+ */
+async function browserPicture(file, data) {
+    if (!file.type.startsWith('image/') || file.size > THUMBNAIL_MAX_BYTES) return null;
+    let bitmap;
+    try {
+        bitmap = await createImageBitmap(file, {resizeWidth: THUMBNAIL_WIDTH, resizeQuality: 'medium'});
+    } catch {
+        return null;
+    }
+    if (data.solved && Math.abs(bitmap.width / bitmap.height - data.fieldWidth / data.fieldHeight) > 0.02 * data.fieldWidth / data.fieldHeight) {
+        bitmap.close();
+        return null;
+    }
+    return {bitmap, bottomUp: false};
+}
+
+/**
+ * The image as rendered by the server, which keeps the solved images: FITS files, TIFF files...
+ * The server displays the first row of FITS files at the bottom, unless their header says
+ * otherwise, and tells it.
+ */
+async function serverPicture(data) {
+    const id = data.download && data.download.id;
+    if (!id) return null;
+    try {
+        const response = await fetch(`api/thumbnail?id=${encodeURIComponent(id)}`);
+        if (!response.ok) return null;
+        const bottomUp = response.headers.get('Asterion-Row-Order') === 'bottom-up';
+        const bitmap = await createImageBitmap(await response.blob());
+        return {bitmap, bottomUp};
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The projection of a solution, from its WCS keywords: gnomonic, with the SIP polynomials of
+ * the distortion. Pixels are counted from 0, like the positions of the objects of a solution.
+ */
+function wcsProjection(wcs) {
+    const rad = Math.PI / 180;
+    const ra0 = wcs.CRVAL1 * rad;
+    const dec0 = wcs.CRVAL2 * rad;
+    const [a, b, c, d] = [wcs.CD1_1, wcs.CD1_2, wcs.CD2_1, wcs.CD2_2];
+    const det = a * d - b * c;
+    const polynomial = (name) => {
+        const order = wcs[`${name}_ORDER`] || 0;
+        const terms = [];
+        for (let i = 0; i <= order; i++) {
+            for (let j = 0; i + j <= order; j++) {
+                const k = wcs[`${name}_${i}_${j}`];
+                if (k) terms.push([i, j, k]);
+            }
+        }
+        return (u, v) => terms.reduce((sum, [i, j, k]) => sum + k * u ** i * v ** j, 0);
+    };
+    const [fa, fb, ap, bp] = ['A', 'B', 'AP', 'BP'].map(polynomial);
+    return {
+        /** The pixel of a position of the sky, or null when it's on the other side of the sky. */
+        toPixel(raDeg, decDeg) {
+            const ra = raDeg * rad, dec = decDeg * rad;
+            const cosc = Math.sin(dec0) * Math.sin(dec) + Math.cos(dec0) * Math.cos(dec) * Math.cos(ra - ra0);
+            if (cosc <= 0.01) return null;
+            const xi = Math.cos(dec) * Math.sin(ra - ra0) / cosc / rad;
+            const eta = (Math.cos(dec0) * Math.sin(dec) - Math.sin(dec0) * Math.cos(dec) * Math.cos(ra - ra0)) / cosc / rad;
+            const u = (d * xi - b * eta) / det;
+            const v = (-c * xi + a * eta) / det;
+            return [u + ap(u, v) + wcs.CRPIX1 - 1, v + bp(u, v) + wcs.CRPIX2 - 1];
+        },
+        /** The position of the sky of a pixel, in degrees. */
+        toSky(x, y) {
+            const u0 = x + 1 - wcs.CRPIX1, v0 = y + 1 - wcs.CRPIX2;
+            const u = u0 + fa(u0, v0), v = v0 + fb(u0, v0);
+            const xi = (a * u + b * v) * rad, eta = (c * u + d * v) * rad;
+            const rho = Math.hypot(xi, eta);
+            const cc = Math.atan(rho);
+            const dec = rho === 0 ? dec0 : Math.asin(Math.cos(cc) * Math.sin(dec0) + eta * Math.sin(cc) * Math.cos(dec0) / rho);
+            const ra = ra0 + Math.atan2(xi * Math.sin(cc), rho * Math.cos(dec0) * Math.cos(cc) - eta * Math.sin(dec0) * Math.sin(cc));
+            return [((ra / rad) % 360 + 360) % 360, dec / rad];
+        },
+    };
+}
+
+/** The radius of the outlines whose labels are inside, in pixels of the thumbnail: they would hide smaller objects. */
+const LABELS_INSIDE = 80;
+
+/** The steps of the grid of coordinates, in degrees. */
+const GRID_STEPS = [1, 2, 5, 10, 15, 20, 30].map(m => m / 60).concat([1, 2, 5, 10, 15, 20, 30]);
+
+/**
+ * The overlay of a thumbnail, in the pixels of the thumbnail: the grid of coordinates, a compass
+ * which shows north and east, and the outlines of the deep sky objects.
+ */
+function overlay(data, thumbWidth, thumbHeight, bottomUp) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'overlay');
+    svg.setAttribute('viewBox', `0 0 ${thumbWidth} ${thumbHeight}`);
+    const add = (tag, attributes, text) => {
+        const e = document.createElementNS(ns, tag);
+        for (const [k, v] of Object.entries(attributes)) e.setAttribute(k, v);
+        if (text !== undefined) e.textContent = text;
+        svg.append(e);
+        return e;
+    };
+    const projection = wcsProjection(data.wcs);
+    const width = Math.round(data.fieldWidth * 3600 / data.scale);
+    const height = Math.round(data.fieldHeight * 3600 / data.scale);
+    const k = thumbWidth / width;
+    // from the pixels of the image to the ones of the thumbnail
+    const toThumb = ([x, y]) => [(x + 0.5) * k, bottomUp ? (height - y - 0.5) * k : (y + 0.5) * k];
+    const project = (ra, dec) => {
+        const p = projection.toPixel(ra, dec);
+        return p && toThumb(p);
+    };
+    const inside = p => p && p[0] >= 0 && p[1] >= 0 && p[0] <= thumbWidth && p[1] <= thumbHeight;
+    const path = points => {
+        let d = '', pen = false;
+        for (const p of points) {
+            if (!p) {
+                pen = false;
+                continue;
+            }
+            d += `${pen ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+            pen = true;
+        }
+        return d;
+    };
+
+    // the extent of the field on the sky, the right ascensions relative to the one of the center
+    const [raCenter, decCenter] = projection.toSky((width - 1) / 2, (height - 1) / 2);
+    let decMin = 90, decMax = -90, raMin = 180, raMax = -180;
+    for (let i = 0; i <= 8; i++) {
+        for (let j = 0; j <= 8; j++) {
+            const [ra, dec] = projection.toSky(i * (width - 1) / 8, j * (height - 1) / 8);
+            const dra = ((ra - raCenter + 540) % 360) - 180;
+            decMin = Math.min(decMin, dec);
+            decMax = Math.max(decMax, dec);
+            raMin = Math.min(raMin, dra);
+            raMax = Math.max(raMax, dra);
+        }
+    }
+    for (const pole of [90, -90]) {
+        if (inside(project(0, pole))) {
+            if (pole > 0) {
+                decMax = 90;
+            } else {
+                decMin = -90;
+            }
+            raMin = -180;
+            raMax = 180;
+        }
+    }
+    const diagonal = Math.hypot(data.fieldWidth, data.fieldHeight);
+    const nice = target => GRID_STEPS.find(s => s >= target) || 30;
+    const decStep = nice(diagonal / 5);
+    const raStep = nice(decStep / Math.max(0.1, Math.cos(decCenter * Math.PI / 180)));
+    const samples = 96;
+    // the corner of the compass, which the labels leave free
+    const compass = [thumbWidth - 120, 0, thumbWidth, 120];
+    const clear = box => !(box[0] < compass[2] && compass[0] < box[2] && box[1] < compass[3] && compass[1] < box[3]);
+    // the label of a line, where it crosses an edge of the image: declinations on the left,
+    // right ascensions at the bottom, or else on the opposite edge
+    const label = (points, edges, text) => {
+        const crossings = [];
+        for (let i = 1; i < points.length; i++) {
+            const [p, q] = [points[i - 1], points[i]];
+            if (!p || !q || inside(p) === inside(q)) continue;
+            const [x, y] = inside(p) ? p : q;
+            const distances = {left: x, right: thumbWidth - x, top: y, bottom: thumbHeight - y};
+            crossings.push([x, y, Object.keys(distances).reduce((a, b) => distances[a] <= distances[b] ? a : b)]);
+        }
+        const crossing = edges.map(edge => crossings.find(c => c[2] === edge)).find(c => c);
+        if (!crossing) return;
+        const [x, y, edge] = crossing;
+        // the width of the label, about: the font is 13 pixels high
+        const width = text.length * 7;
+        const along = Math.min(Math.max(x + 4, 4), thumbWidth - 4 - width);
+        const at = {
+            left: {x: 4, y: y - 4},
+            right: {x: thumbWidth - 4 - width, y: y - 4},
+            bottom: {x: along, y: thumbHeight - 6},
+            top: {x: along, y: 16},
+        }[edge];
+        if (clear([at.x, at.y - 12, at.x + width, at.y + 2])) {
+            add('text', {...at, class: 'grid-label'}, text);
+        }
+    };
+    const lines = [];
+    for (let dec = Math.ceil(decMin / decStep) * decStep; dec <= decMax; dec += decStep) {
+        const points = [];
+        for (let i = 0; i <= samples; i++) points.push(project(raCenter + raMin + (raMax - raMin) * i / samples, dec));
+        lines.push([points, ['left', 'right'], dmsLabel(dec, decStep)]);
+    }
+    for (let dra = Math.ceil((raCenter + raMin) / raStep) * raStep - raCenter; dra <= raMax; dra += raStep) {
+        const points = [];
+        for (let i = 0; i <= samples; i++) points.push(project(raCenter + dra, decMin + (decMax - decMin) * i / samples));
+        lines.push([points, ['bottom', 'top'], hmsLabel(((raCenter + dra) % 360 + 360) % 360, raStep)]);
+    }
+    add('path', {d: lines.map(([points]) => path(points)).join(''), class: 'grid'});
+    for (const line of lines) label(...line);
+
+    // the deep sky objects: their outlines, from their sizes and position angles, then the labels of
+    // the most prominent ones, as they come first, where they cover neither other labels nor markers
+    const taken = [compass];
+    const free = box => box[0] >= 0 && box[2] <= thumbWidth && box[1] >= 0 && box[3] <= thumbHeight
+        && !taken.some(t => box[0] < t[2] && t[0] < box[2] && box[1] < t[3] && t[1] < box[3]);
+    const shown = [];
+    for (const o of (data.objects || []).slice(0, 30)) {
+        // the position computed by the server, which is exact: the inverse polynomials of the
+        // distortion are approximations, which drift on the edges of very wide fields
+        const center = toThumb([o.x, o.y]);
+        const projected = project(o.ra, o.dec);
+        if (!inside(center) || !projected) continue;
+        const shift = p => p && [p[0] + center[0] - projected[0], p[1] + center[1] - projected[1]];
+        const a = (o.majorArcmin || 0) / 120;
+        const b = (o.minorArcmin || o.majorArcmin || 0) / 120;
+        const angle = (o.angle || 0) * Math.PI / 180;
+        const outline = [];
+        for (let i = 0; i <= 48 && a > 0; i++) {
+            const t = 2 * Math.PI * i / 48;
+            const north = a * Math.cos(t) * Math.cos(angle) - b * Math.sin(t) * Math.sin(angle);
+            const east = a * Math.cos(t) * Math.sin(angle) + b * Math.sin(t) * Math.cos(angle);
+            outline.push(shift(project(o.ra + east / Math.cos(o.dec * Math.PI / 180), o.dec + north)));
+        }
+        const extent = outline.filter(p => p).reduce((m, p) => Math.max(m, Math.hypot(p[0] - center[0], p[1] - center[1])), 0);
+        if (extent >= 6) {
+            add('path', {d: path(outline) + 'Z', class: 'object'});
+        } else {
+            add('circle', {cx: center[0], cy: center[1], r: 6, class: 'object'});
+        }
+        // a small object is its marker; the outline of a large one can have labels inside
+        const radius = Math.max(extent, 6);
+        if (radius < LABELS_INSIDE) {
+            taken.push([center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius]);
+        }
+        shown.push([o, center, radius]);
+    }
+    for (const [o, center, radius] of shown) {
+        // inside the outlines which are large enough, as a label next to a large outline is next to
+        // other objects too; next to the marker otherwise
+        const width = o.label.length * 8.5;
+        const at = (x, y) => [x, y - 13, x + width, y + 4];
+        const candidates = radius >= LABELS_INSIDE
+            ? [at(center[0] - width / 2, center[1] + 5), at(center[0] - width / 2, center[1] + 24), at(center[0] - width / 2, center[1] - 14)]
+            : [at(center[0] + radius + 4, center[1] + 5), at(center[0] - radius - 4 - width, center[1] + 5),
+                at(center[0] - width / 2, center[1] + radius + 17), at(center[0] - width / 2, center[1] - radius - 6)];
+        const box = candidates.find(free);
+        if (box) {
+            taken.push(box);
+            add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, o.label);
+        }
+    }
+
+    // the compass, in the corner without labels: the directions of north and east at the center of the image
+    const step = diagonal / 20;
+    const origin = project(raCenter, decCenter);
+    const north = project(raCenter, Math.min(90, decCenter + step));
+    const east = project(raCenter + step / Math.max(0.01, Math.cos(decCenter * Math.PI / 180)), decCenter);
+    if (origin && north && east) {
+        const corner = [(compass[0] + compass[2]) / 2, (compass[1] + compass[3]) / 2];
+        const arrow = (to, name) => {
+            const dx = to[0] - origin[0], dy = to[1] - origin[1];
+            const length = Math.hypot(dx, dy) || 1;
+            const tip = [corner[0] + 32 * dx / length, corner[1] + 32 * dy / length];
+            add('line', {x1: corner[0], y1: corner[1], x2: tip[0], y2: tip[1], class: 'compass'});
+            add('text', {x: corner[0] + 44 * dx / length, y: corner[1] + 44 * dy / length + 5, class: 'compass-label'}, name);
+        };
+        arrow(north, 'N');
+        arrow(east, 'E');
+    }
+    return svg;
+}
+
+/** A declination of the grid: "+33°", "+33° 10′". */
+function dmsLabel(dec, step) {
+    const sign = dec < -1e-9 ? '−' : '+';
+    const minutes = Math.round(Math.abs(dec) * 60);
+    const d = Math.floor(minutes / 60), m = minutes % 60;
+    return step >= 1 || m === 0 ? `${sign}${d}°` : `${sign}${d}° ${String(m).padStart(2, '0')}′`;
+}
+
+/** A right ascension of the grid: "18h 53m", "18h 53m 20s". */
+function hmsLabel(ra, step) {
+    const seconds = Math.round(ra / 15 * 3600);
+    const h = Math.floor(seconds / 3600) % 24, m = Math.floor(seconds % 3600 / 60), s = seconds % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return step >= 1 / 4 && s === 0 ? `${h}h ${pad(m)}m` : `${h}h ${pad(m)}m ${pad(s)}s`;
+}
 
 function resultView(data) {
     const views = [];

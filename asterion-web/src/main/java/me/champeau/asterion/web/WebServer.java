@@ -47,6 +47,8 @@ import java.util.logging.Logger;
 public final class WebServer implements AutoCloseable {
     /** The largest image which can be uploaded. */
     private static final long MAX_UPLOAD_BYTES = 2L << 30;
+    /** The width of the thumbnails which are made here, see {@link #thumbnail}: the ones made by browsers have the same. */
+    private static final int THUMBNAIL_WIDTH = 800;
     /** The largest radius of charts: they show the stars of a catalog around a solution. */
     private static final double MAX_CHART_RADIUS_DEG = 30;
     private static final Map<String, String> STATIC_FILES = Map.of(
@@ -87,6 +89,7 @@ public final class WebServer implements AutoCloseable {
         server.createContext("/api/solve", web.handler(web::solve));
         server.createContext("/api/stars", web.handler(web::stars));
         server.createContext("/api/download", web.handler(web::download));
+        server.createContext("/api/thumbnail", web.handler(web::thumbnail));
         server.createContext("/api/astap", web.handler(WebServer::astap));
         server.createContext("/", web.handler(WebServer::staticFile));
         server.start();
@@ -254,6 +257,36 @@ public final class WebServer implements AutoCloseable {
             }
             default -> throw new IllegalArgumentException("Unknown format " + format + ": use fits, wcs or csv");
         }
+    }
+
+    /**
+     * The thumbnail of a solved image, for the images which browsers can't display: it is made the
+     * first time it's asked for, after the image was solved, and is never part of a solution.
+     */
+    private void thumbnail(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var image = solved.get(request.parameter("id"));
+        var file = image.thumbnail();
+        var bottomUp = Thumbnail.bottomUp(image.file(), image.name());
+        if (!Files.exists(file)) {
+            byte[] png;
+            try {
+                png = Thumbnail.png(ImageLoader.load(image.file(), 0).image(), THUMBNAIL_WIDTH, bottomUp);
+            } catch (IOException e) {
+                throw new IllegalArgumentException(String.valueOf(e.getMessage()).replace(image.file().toString(), image.name()), e);
+            }
+            // written aside, then moved: a request at the same time never reads half a file
+            var temp = solved.createTempFile(".png");
+            Files.write(temp, png);
+            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
+        exchange.getResponseHeaders().set("Content-Type", "image/png");
+        exchange.getResponseHeaders().set("Cache-Control", "private, max-age=3600");
+        // the thumbnail is displayed as it is: this tells where the first row of the image is
+        exchange.getResponseHeaders().set("Asterion-Row-Order", bottomUp ? "bottom-up" : "top-down");
+        exchange.sendResponseHeaders(200, Files.size(file));
+        Files.copy(file, exchange.getResponseBody());
     }
 
     private static void attachment(HttpExchange exchange, String name, String type, long length) throws IOException {
