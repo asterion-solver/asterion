@@ -209,7 +209,8 @@ ones are written uncompressed), as a FITS header alone (a `.wcs` file, like thos
 `asterion --wcs`), as the list of matched stars (CSV) or as JSON. To make this possible, the server keeps
 the last 10 solved images for an hour, within 4 GB, in a temporary directory which it deletes when it stops.
 
-Its API is what the page uses:
+Its API is what the page uses, which other programs can call too. Its definition, as OpenAPI 3.1, is served at
+`/api/openapi.yaml`: tools such as Swagger UI or client generators can read it there.
 
 | Request | Answer |
 |---|---|
@@ -219,6 +220,8 @@ Its API is what the page uses:
 | `GET /api/download?id=…&format=fits` | a solved image, by the `download.id` of its solution: `fits` for the image with its solution, `wcs` for the header alone, `csv` for the matched stars |
 | `GET /api/thumbnail?id=…` | the thumbnail of a solved image, as a PNG file: the image reduced and stretched, the first row at the bottom when the `Asterion-Row-Order` header of the answer is `bottom-up`, like FITS files whose header doesn't say otherwise |
 | `GET /api/settings`, `POST /api/settings?port=…` | the port the server listens on when it starts, and saves it |
+| `GET /api/astap`, `POST /api/astap` | whether the ASTAP compatible executable can be installed next to `asterion`, and installs it |
+| `GET /api/openapi.yaml` | the definition of the API |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
 
 ## How it works

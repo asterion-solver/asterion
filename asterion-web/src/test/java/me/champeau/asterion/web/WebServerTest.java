@@ -33,8 +33,10 @@ import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.util.OptionalInt;
 import java.util.SplittableRandom;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebServerTest {
@@ -127,6 +129,26 @@ class WebServerTest {
             assertTrue(settings.body().contains("\"portFromCommandLine\":true") && settings.body().endsWith("\"restartNeeded\":false}"),
                     settings.body());
         }
+    }
+
+    @Test
+    void servesTheDefinitionOfItsApi() throws Exception {
+        var response = get("/api/openapi.yaml");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElseThrow().startsWith("application/yaml"));
+        var definition = response.body();
+        assertTrue(definition.startsWith("openapi: 3.1.0"), definition.substring(0, 40));
+        assertFalse(definition.contains("@VERSION@"));
+        // every operation of the server is described, and only those
+        var described = new TreeSet<String>();
+        for (var line : definition.split("\n")) {
+            if (line.matches("^  /api/[a-z.]+:$")) {
+                described.add(line.trim().replace(":", ""));
+            }
+        }
+        var routes = new TreeSet<>(server.routes().keySet());
+        routes.add("/api/openapi.yaml");
+        assertEquals(routes, described);
     }
 
     @Test

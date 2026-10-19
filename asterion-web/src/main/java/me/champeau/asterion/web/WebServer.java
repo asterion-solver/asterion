@@ -36,6 +36,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Executors;
@@ -61,7 +62,8 @@ public final class WebServer implements AutoCloseable {
             "/app.js", "app.js",
             "/charts.js", "charts.js",
             "/style.css", "style.css",
-            "/sky.json", "sky.json");
+            "/sky.json", "sky.json",
+            "/api/openapi.yaml", "openapi.yaml");
 
     /** Solved images are kept for downloads: the last ones, for an hour, within a limit of disk space. */
     private static final int KEPT_IMAGES = 10;
@@ -105,17 +107,27 @@ public final class WebServer implements AutoCloseable {
         var web = new WebServer(server, new CatalogService(catalogDirectory),
                 new SolvedImages(KEPT_IMAGES, KEPT_BYTES, KEPT_FOR, Clock.systemUTC()), preferences, portFromCommandLine);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-        server.createContext("/api/catalogs", web.handler(web::catalogs));
-        server.createContext("/api/install", web.handler(web::install));
-        server.createContext("/api/solve", web.handler(web::solve));
-        server.createContext("/api/stars", web.handler(web::stars));
-        server.createContext("/api/download", web.handler(web::download));
-        server.createContext("/api/thumbnail", web.handler(web::thumbnail));
-        server.createContext("/api/astap", web.handler(WebServer::astap));
-        server.createContext("/api/settings", web.handler(web::settings));
+        web.routes().forEach((path, route) -> server.createContext(path, web.handler(route)));
         server.createContext("/", web.handler(WebServer::staticFile));
         server.start();
         return web;
+    }
+
+    /**
+     * The operations of the API, by their paths, which its definition describes: see
+     * {@code web/openapi.yaml}, which is served at {@code /api/openapi.yaml}.
+     */
+    Map<String, Route> routes() {
+        var routes = new LinkedHashMap<String, Route>();
+        routes.put("/api/catalogs", this::catalogs);
+        routes.put("/api/install", this::install);
+        routes.put("/api/solve", this::solve);
+        routes.put("/api/stars", this::stars);
+        routes.put("/api/download", this::download);
+        routes.put("/api/thumbnail", this::thumbnail);
+        routes.put("/api/astap", WebServer::astap);
+        routes.put("/api/settings", this::settings);
+        return routes;
     }
 
     /** The address of the interface, which uses "localhost" when the server listens on all addresses. */
@@ -136,7 +148,7 @@ public final class WebServer implements AutoCloseable {
     }
 
     @FunctionalInterface
-    private interface Route {
+    interface Route {
         void handle(HttpExchange exchange) throws IOException;
     }
 
@@ -368,9 +380,14 @@ public final class WebServer implements AutoCloseable {
             }
             content = in.readAllBytes();
         }
+        if (file.endsWith(".yaml")) {
+            // the definition of the API has the version of the server
+            content = new String(content, StandardCharsets.UTF_8).replace("@VERSION@", version()).getBytes(StandardCharsets.UTF_8);
+        }
         var type = file.endsWith(".html") ? "text/html"
                 : file.endsWith(".js") ? "text/javascript"
-                        : file.endsWith(".json") ? "application/json" : "text/css";
+                        : file.endsWith(".json") ? "application/json"
+                                : file.endsWith(".yaml") ? "application/yaml" : "text/css";
         exchange.getResponseHeaders().set("Content-Type", type + "; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
         exchange.sendResponseHeaders(200, content.length);

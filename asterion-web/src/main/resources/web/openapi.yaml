@@ -1,0 +1,825 @@
+openapi: 3.1.0
+info:
+  title: Asterion Solver
+  version: "@VERSION@"
+  summary: The API of the web interface of Asterion Solver, a plate solver for astronomical images.
+  description: |
+    The API which the page of the web interface uses, which other programs can call too: it solves
+    images, installs star catalogs, and describes solutions. The server listens on this machine only,
+    unless it's started with `--host`, and has no access control.
+
+    Errors are answered as JSON, `{"error": "…"}`, with the status 400 for invalid requests, 404 for
+    what doesn't exist (anymore), 409 for what the state of the server doesn't allow, and 500
+    otherwise. A request with another method than the one of its operation is invalid.
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+# no access control: the server listens on this machine only, unless it's started with --host
+security: []
+tags:
+  - name: solving
+    description: Solving images, and the files of their solutions
+  - name: catalogs
+    description: The star catalogs the solver uses
+  - name: interface
+    description: The settings of the web interface
+paths:
+  /api/solve:
+    post:
+      tags: [solving]
+      operationId: solve
+      summary: Solves an image
+      description: |
+        Solves the image sent as the body of the request, and answers with the JSON output of
+        `asterion --json`, with the constellation of the image, its outline on the sky, the deep
+        sky objects it contains and the positions of the matched stars. Solved images are kept for
+        an hour (the last 10, within 4 GB), for downloads and thumbnails, by the `download.id` of
+        their solution.
+
+        Boolean parameters are true unless their value is `false`.
+      parameters:
+        - name: name
+          in: query
+          description: The name of the image file, whose extension tells its format when it's compressed, such as `image.fits.gz`.
+          schema:
+            type: string
+            default: image
+          example: m31.fits
+        - name: ra
+          in: query
+          description: The right ascension of the center of the image, in degrees, J2000; with `dec`.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+            maximum: 360
+        - name: dec
+          in: query
+          description: The declination of the center of the image, in degrees, J2000; with `ra`.
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: radius
+          in: query
+          description: The radius of the search around `ra` and `dec`, in degrees.
+          schema:
+            type: number
+            format: double
+            default: 10
+        - name: fov
+          in: query
+          description: The width of the field of view, in degrees; an error of 30% is tolerated.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: 0
+        - name: scaleLow
+          in: query
+          description: The smallest scale of the image, in arcseconds per pixel.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+        - name: scaleHigh
+          in: query
+          description: The largest scale of the image, in arcseconds per pixel.
+          schema:
+            type: number
+            format: double
+            minimum: 0
+        - name: hints
+          in: query
+          description: Whether the position and the scale found in the header of the image are used.
+          schema:
+            type: boolean
+            default: true
+        - name: blind
+          in: query
+          description: Whether the whole sky is searched when the hints don't solve the image.
+          schema:
+            type: boolean
+            default: true
+        - name: sipOrder
+          in: query
+          description: The order of the SIP polynomials of the distortion, 0 for none, -1 to choose it automatically.
+          schema:
+            type: integer
+            enum: [-1, 0, 2, 3, 4, 5]
+            default: -1
+        - name: parity
+          in: query
+          description: Whether the image is mirrored compared to the sky, if known.
+          schema:
+            type: string
+            enum: [both, normal, flipped]
+            default: both
+        - name: binning
+          in: query
+          description: The binning applied before stars are detected, 0 to choose it automatically.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: timeout
+          in: query
+          description: The time after which the search is given up, in seconds.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: 0
+            default: 30
+      requestBody:
+        required: true
+        description: The image file, as it is on disk, up to 2 GB.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: The result, whether the image was solved or not.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolveResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: No catalog is installed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          $ref: "#/components/responses/Failure"
+  /api/download:
+    get:
+      tags: [solving]
+      operationId: download
+      summary: Downloads a file of a solved image
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: format
+          in: query
+          required: true
+          description: |
+            `fits` for the image with its solution in its header (FITS images only, which `download.fits`
+            tells; compressed ones are written uncompressed), `wcs` for the solution as a FITS header
+            without data (a `.wcs` file, like the ones of astrometry.net), `csv` for the matched stars.
+          schema:
+            type: string
+            enum: [fits, wcs, csv]
+      responses:
+        "200":
+          description: The file, as an attachment named after the image.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="…"`: `image.solved.fits`, `image.wcs` or `image.matches.csv`.'
+              schema:
+                type: string
+          content:
+            application/fits:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                description: The matched stars, with their pixel and sky positions and their residuals.
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotKept"
+  /api/thumbnail:
+    get:
+      tags: [solving]
+      operationId: thumbnail
+      summary: The thumbnail of a solved image
+      description: |
+        The image reduced to 800 pixels wide and stretched, as an 8-bit grayscale PNG file: what
+        the page shows for the images which browsers can't display, such as FITS files. It's made the
+        first time it's asked for.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The thumbnail.
+          headers:
+            Asterion-Row-Order:
+              description: |
+                `bottom-up` when the first row of the image is at the bottom of the thumbnail, as FITS files
+                are displayed unless their `ROWORDER` keyword says otherwise; `top-down` otherwise.
+              schema:
+                type: string
+                enum: [bottom-up, top-down]
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "404":
+          $ref: "#/components/responses/NotKept"
+  /api/stars:
+    get:
+      tags: [catalogs]
+      operationId: stars
+      summary: The brightest stars of a catalog in a cone
+      description: The stars which the charts of the page draw, the brightest first.
+      parameters:
+        - name: ra
+          in: query
+          required: true
+          description: The right ascension of the center of the cone, in degrees.
+          schema:
+            type: number
+            format: double
+        - name: dec
+          in: query
+          required: true
+          description: The declination of the center of the cone, in degrees.
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: radius
+          in: query
+          required: true
+          description: The radius of the cone, in degrees.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: 0
+            maximum: 30
+        - name: catalog
+          in: query
+          description: The name of an installed catalog; the first one by default.
+          schema:
+            type: string
+          example: tycho2
+        - name: count
+          in: query
+          description: The number of stars, about.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20000
+            default: 2000
+      responses:
+        "200":
+          description: The stars.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stars"
+              example:
+                catalog: tycho2
+                levels: 3
+                stars: [10.6847, 41.2689, 0, 10.1234, 40.9876, 1]
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: No catalog is installed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/catalogs:
+    get:
+      tags: [catalogs]
+      operationId: catalogs
+      summary: The catalogs which are installed and available, and the installations in progress
+      responses:
+        "200":
+          description: The catalogs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalogs"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+  /api/install:
+    post:
+      tags: [catalogs]
+      operationId: install
+      summary: Starts installing a catalog
+      description: |
+        The catalog is downloaded and installed in the background: `GET /api/catalogs` tells the
+        progress of the installation, in `installations`.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The name of the catalog, such as `tycho2`, `gaia-500`, or `gaia-N` for N stars per square degree.
+          schema:
+            type: string
+          example: gaia-500
+      responses:
+        "202":
+          description: The installation started; the catalogs, with the installation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalogs"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "409":
+          description: The catalog is being installed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/astap:
+    get:
+      tags: [interface]
+      operationId: astap
+      summary: Whether the ASTAP compatible executable can be installed, and whether it is
+      description: |
+        Programs which call ASTAP can call Asterion Solver instead, through an `astap` executable
+        next to the `asterion` one: a link, or a copy on Windows. Only a native executable of the
+        web interface, next to the one of the command line tool, can install it.
+      responses:
+        "200":
+          description: The state of the ASTAP compatible executable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Astap"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+    post:
+      tags: [interface]
+      operationId: installAstap
+      summary: Installs the ASTAP compatible executable
+      responses:
+        "200":
+          description: The executable is installed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Astap"
+        "409":
+          description: The executable can't be installed, for the reason the answer gives.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/settings:
+    get:
+      tags: [interface]
+      operationId: settings
+      summary: The port the web interface listens on
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+    post:
+      tags: [interface]
+      operationId: saveSettings
+      summary: Saves the port the web interface listens on when it starts
+      description: |
+        The port is saved in `~/.asterion/web.properties`, and used the next time the web interface
+        starts, unless a port is given with `--port`.
+      parameters:
+        - name: port
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 65535
+      responses:
+        "200":
+          description: The port is saved; the settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+  /api/openapi.yaml:
+    get:
+      tags: [interface]
+      operationId: openApi
+      summary: This definition of the API
+      responses:
+        "200":
+          description: The definition, as OpenAPI 3.1.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+components:
+  parameters:
+    Id:
+      name: id
+      in: query
+      required: true
+      description: The identifier of a solved image, which is the `download.id` of its solution.
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{32}$"
+  responses:
+    InvalidRequest:
+      description: An invalid request, a request with another method than the one of its operation, or an image which can't be read.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotKept:
+      description: The image isn't kept anymore, or never was.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Failure:
+      description: An unexpected failure.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: What went wrong.
+      example:
+        error: "Invalid value for ra: abc"
+    SolveResult:
+      type: object
+      description: |
+        The result of a solve, with the fields of the JSON output of `asterion --json`. When the
+        image isn't solved, only `image`, `solved`, `stars`, `fwhmPixels` and `timing` are there;
+        when it is, all the fields are, but `focalLength` and `pixelSize`, which are there when the
+        size of the pixels is known. Numbers which aren't known are `null`.
+      required: [image, solved, stars, fwhmPixels, timing]
+      if:
+        properties:
+          solved:
+            const: true
+      then:
+        required: [ra, dec, scale, rotation, flipped, fieldWidth, fieldHeight, fwhmArcsec, matchedStars, rmsArcsec, logOdds,
+                   index, wcs, constellation, outline, objects, matches, download]
+      properties:
+        image:
+          type: string
+          description: The name of the image.
+        solved:
+          type: boolean
+        stars:
+          type: integer
+          description: The number of stars which were detected.
+        fwhmPixels:
+          type: [number, "null"]
+          format: double
+          description: The median width of the stars, in pixels.
+        ra:
+          type: number
+          format: double
+          description: The right ascension of the center of the image, in degrees, J2000.
+        dec:
+          type: number
+          format: double
+          description: The declination of the center of the image, in degrees, J2000.
+        scale:
+          type: number
+          format: double
+          description: The scale of the image, in arcseconds per pixel.
+        focalLength:
+          type: number
+          format: double
+          description: The focal length, in millimeters, when the size of the pixels is known, from the header of the image or the options.
+        pixelSize:
+          type: number
+          format: double
+          description: The size of the pixels, binning included, in micrometers, with the focal length.
+        rotation:
+          type: number
+          format: double
+          description: The position angle of the Y axis of the image, in degrees east of north.
+        flipped:
+          type: boolean
+          description: Whether the image is mirrored, compared to the sky displayed with the first row at the bottom.
+        fieldWidth:
+          type: number
+          format: double
+          description: The width of the field of view, in degrees.
+        fieldHeight:
+          type: number
+          format: double
+          description: The height of the field of view, in degrees.
+        fwhmArcsec:
+          type: [number, "null"]
+          format: double
+          description: The median width of the stars, in arcseconds.
+        matchedStars:
+          type: integer
+          description: The number of stars of the image which were matched with the catalog.
+        rmsArcsec:
+          type: number
+          format: double
+          description: The residuals of the matched stars, in arcseconds.
+        logOdds:
+          type: number
+          format: double
+          description: The natural logarithm of the odds that the solution is right.
+        index:
+          type: string
+          description: The catalog which solved the image.
+        wcs:
+          type: object
+          description: The solution, as the keywords of a FITS header (WCS, with SIP polynomials), whose values are strings or numbers.
+          additionalProperties: true
+          example:
+            CTYPE1: RA---TAN-SIP
+            CRVAL1: 10.6847
+            CRPIX1: 1500.5
+        constellation:
+          $ref: "#/components/schemas/Constellation"
+        outline:
+          type: array
+          description: The edges of the image on the sky, as (right ascension, declination) pairs in degrees.
+          items:
+            $ref: "#/components/schemas/SkyPosition"
+        objects:
+          type: array
+          description: The deep sky objects of the image, the most prominent first.
+          items:
+            $ref: "#/components/schemas/DeepSkyObject"
+        matches:
+          type: array
+          description: The positions of the matched stars of the catalog.
+          items:
+            $ref: "#/components/schemas/SkyPosition"
+        download:
+          $ref: "#/components/schemas/Download"
+        timing:
+          $ref: "#/components/schemas/Timing"
+    SkyPosition:
+      type: array
+      description: A right ascension and a declination, in degrees.
+      prefixItems:
+        - type: number
+          format: double
+        - type: number
+          format: double
+      minItems: 2
+      maxItems: 2
+    DeepSkyObject:
+      type: object
+      description: |
+        An object of the Messier, NGC and IC catalogs, of OpenNGC, or of the catalogs of nebulae of
+        Sharpless and Lynds. An object which several catalogs list has the designation of the most
+        famous one, and the others as aliases.
+      required: [name, label, designation, commonName, aliases, type, ra, dec, x, y, distance, majorArcmin, minorArcmin, angle,
+                 magnitude]
+      properties:
+        name:
+          type: string
+          description: The Messier number, or the designation.
+          example: M 31
+        label:
+          type: string
+          description: The name, with the common names.
+          example: M 31 (Andromeda Galaxy)
+        designation:
+          type: string
+          example: NGC 224
+        commonName:
+          type: [string, "null"]
+          description: The common names, separated by commas.
+        aliases:
+          type: [string, "null"]
+          description: The designations in less famous catalogs, separated by commas.
+          example: Sh2-117, LBN 373
+        type:
+          type: string
+          description: The kind of object, in words.
+          example: galaxy
+        ra:
+          type: number
+          format: double
+          description: The right ascension of the center of the object, in degrees, J2000.
+        dec:
+          type: number
+          format: double
+          description: The declination of the center of the object, in degrees, J2000.
+        x:
+          type: number
+          format: double
+          description: The abscissa of the center of the object in the image, in pixels, from 0, possibly outside of the image.
+        y:
+          type: number
+          format: double
+          description: The ordinate of the center of the object in the image, in pixels, from 0.
+        distance:
+          type: number
+          format: double
+          description: The distance between the object and the center of the image, in degrees.
+        majorArcmin:
+          type: [number, "null"]
+          format: double
+          description: The major axis, in arcminutes.
+        minorArcmin:
+          type: [number, "null"]
+          format: double
+          description: The minor axis, in arcminutes.
+        angle:
+          type: [number, "null"]
+          format: double
+          description: The position angle of the major axis, in degrees east of north.
+        magnitude:
+          type: [number, "null"]
+          format: double
+          description: The visual magnitude, or the blue one.
+    Catalogs:
+      type: object
+      required: [directory, installed, available, installations, version]
+      properties:
+        directory:
+          type: string
+          description: The directory where catalogs are installed.
+        installed:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstalledCatalog"
+        available:
+          type: array
+          description: The catalogs which can be installed.
+          items:
+            $ref: "#/components/schemas/AvailableCatalog"
+        installations:
+          type: array
+          description: The installations of this server, in progress or finished.
+          items:
+            $ref: "#/components/schemas/Installation"
+        version:
+          type: string
+          description: The version of Asterion Solver.
+    Installation:
+      type: object
+      required: [name, running, step, fraction, bytes, message, error, log]
+      properties:
+        name:
+          type: string
+        running:
+          type: boolean
+        step:
+          type: string
+          description: What the installation does.
+        fraction:
+          type: [number, "null"]
+          format: double
+          description: The progress of the step, from 0 to 1, when it's known.
+        bytes:
+          type: integer
+          format: int64
+          description: The bytes downloaded, or -1.
+        message:
+          type: [string, "null"]
+        error:
+          type: [string, "null"]
+          description: Why the installation failed, when it did.
+        log:
+          type: array
+          items:
+            type: string
+    Astap:
+      type: object
+      required: [native, available, reason, directory, executable, executableName, target, targetName, installed, link]
+      properties:
+        native:
+          type: boolean
+          description: Whether the web interface is a native executable.
+        available:
+          type: boolean
+          description: Whether the ASTAP compatible executable can be installed.
+        reason:
+          type: [string, "null"]
+          description: Why it can't be.
+        directory:
+          type: [string, "null"]
+        executable:
+          type: [string, "null"]
+          description: The command line tool.
+        executableName:
+          type: [string, "null"]
+        target:
+          type: [string, "null"]
+          description: The ASTAP compatible executable.
+        targetName:
+          type: [string, "null"]
+        installed:
+          type: boolean
+        link:
+          type: boolean
+          description: Whether it's a link to the command line tool, rather than a copy.
+    Settings:
+      type: object
+      required: [port, currentPort, portFromCommandLine, restartNeeded]
+      properties:
+        port:
+          type: integer
+          description: The port the web interface listens on when it starts, unless one is given with `--port`.
+        currentPort:
+          type: integer
+          description: The port it listens on.
+        portFromCommandLine:
+          type: boolean
+          description: Whether it was started with `--port`, which takes precedence over the saved port.
+        restartNeeded:
+          type: boolean
+          description: Whether it must be restarted to listen on the saved port.
+    Stars:
+      type: object
+      required: [catalog, levels, stars]
+      properties:
+        catalog:
+          type: string
+          description: The name of the catalog.
+        levels:
+          type: integer
+          description: The number of levels of the index which were read.
+        stars:
+          type: array
+          description: |
+            The stars, flattened: right ascension and declination in degrees, then the level of the
+            index, which tells the brightness, the brightest stars being at level 0.
+          items:
+            type: number
+            format: double
+    Constellation:
+      type: object
+      required: [abbreviation, name]
+      properties:
+        abbreviation:
+          type: string
+          example: And
+        name:
+          type: string
+          example: Andromeda
+    Download:
+      type: object
+      description: How to download the files of the solution, and the thumbnail of the image.
+      required: [id, fits]
+      properties:
+        id:
+          type: string
+          description: The identifier of the image, for `/api/download` and `/api/thumbnail`.
+        fits:
+          type: boolean
+          description: Whether the image is a FITS file, which can be downloaded with its solution.
+    Timing:
+      type: object
+      description: The time of each step, in milliseconds.
+      required: [readMillis, detectMillis, solveMillis, totalMillis]
+      properties:
+        readMillis:
+          type: number
+          format: double
+        detectMillis:
+          type: number
+          format: double
+        solveMillis:
+          type: number
+          format: double
+        totalMillis:
+          type: number
+          format: double
+    InstalledCatalog:
+      type: object
+      required: [name, size]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+          description: The size of the index file, in bytes.
+    AvailableCatalog:
+      type: object
+      required: [name, description, installed]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        installed:
+          type: boolean
