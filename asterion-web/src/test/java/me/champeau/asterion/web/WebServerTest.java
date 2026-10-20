@@ -136,7 +136,7 @@ class WebServerTest {
             var uri = web.uri();
             var settings = client.send(HttpRequest.newBuilder(uri.resolve("api/settings")).build(), HttpResponse.BodyHandlers.ofString());
             assertEquals(200, settings.statusCode());
-            assertTrue(settings.body().startsWith("{\"port\":8080,\"currentPort\":" + uri.getPort() + ",\"portFromCommandLine\":false"),
+            assertTrue(settings.body().startsWith("{\"port\":7531,\"currentPort\":" + uri.getPort() + ",\"portFromCommandLine\":false"),
                     settings.body());
 
             var invalid = client.send(

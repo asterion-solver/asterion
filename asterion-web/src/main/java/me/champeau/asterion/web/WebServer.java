@@ -51,7 +51,7 @@ public final class WebServer implements AutoCloseable {
     /** The largest image which can be uploaded. */
     private static final long MAX_UPLOAD_BYTES = 2L << 30;
     /** The port the server listens on, unless another one is given on the command line or saved from the interface. */
-    private static final int DEFAULT_PORT = 8080;
+    private static final int DEFAULT_PORT = 7531;
     /** The width of the thumbnails which are made here, see {@link #thumbnail}: the ones made by browsers have the same. */
     private static final int THUMBNAIL_WIDTH = 800;
     /** The largest radius of charts: they show the stars of a catalog around a solution. */
@@ -510,7 +510,7 @@ public final class WebServer implements AutoCloseable {
         System.out.println("""
                 Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>]
                   --host <address>         the address to listen on (default: 127.0.0.1, this machine only)
-                  --port <port>            the port to listen on (default: the one saved from the interface, or 8080; 0 for any free port)
+                  --port <port>            the port to listen on (default: the one saved from the interface, or 7531; 0 for any free port)
                   --catalog-dir <dir>      the directory of the catalogs (default: $ASTERION_CATALOGS, or ~/.asterion/catalogs)
                   -V, --version            prints the version
                   -h, --help               prints this help""");

@@ -183,7 +183,7 @@ which are uploaded to it, with the options of the command line tool, and lists a
 
 ```
 $ asterion-web
-Asterion Solver 0.2.0, web interface: http://127.0.0.1:8080/
+Asterion Solver 0.2.0, web interface: http://127.0.0.1:7531/
 Catalogs: /home/user/.asterion/catalogs
 Press Ctrl+C to stop
 ```
