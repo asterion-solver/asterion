@@ -31,7 +31,7 @@ public final class ImageLoader {
     }
 
     /**
-     * Loads an image.
+     * Loads an image: FITS, PNG, JPEG, TIFF, BMP, or the raw file of a camera.
      *
      * @param binning the binning factor, or 0 to select it automatically
      */
@@ -58,9 +58,14 @@ public final class ImageLoader {
         if (data.length == 0) {
             throw new IOException("Empty file: " + path);
         }
+        // most raw files of cameras are TIFF files: they are recognized first
+        if (CameraRawDecoder.isCameraRaw(data)) {
+            return CameraRawDecoder.load(data, binning);
+        }
         var image = decode(data, binning);
         if (image == null) {
-            throw new IOException("Unsupported image format: " + path + ", expected FITS, PNG, JPEG, TIFF or BMP");
+            throw new IOException("Unsupported image format: " + path
+                    + ", expected FITS, PNG, JPEG, TIFF, BMP or the raw file of a camera (CR2, CR3, NEF, ARW, DNG...)");
         }
         return new LoadedImage(image, ImageHints.none());
     }
