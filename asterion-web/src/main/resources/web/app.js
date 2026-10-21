@@ -179,6 +179,9 @@ async function pickImage() {
                     'image/jpeg': ['.jpg', '.jpeg'],
                     'image/tiff': ['.tif', '.tiff'],
                     'image/bmp': ['.bmp'],
+                    // the raw files of cameras, which have no common media type
+                    'application/octet-stream': ['.cr2', '.cr3', '.nef', '.nrw', '.arw', '.srf', '.sr2', '.dng', '.pef', '.orf', '.rw2',
+                        '.raf', '.srw', '.erf', '.3fr', '.kdc', '.dcr', '.mef', '.mos', '.rwl', '.iiq'],
                 },
             }],
         });

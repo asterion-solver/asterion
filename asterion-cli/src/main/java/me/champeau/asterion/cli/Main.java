@@ -61,7 +61,8 @@ import java.util.logging.Logger;
 // fields are injected by picocli
 @SuppressWarnings({"unused", "FieldMayBeFinal", "MismatchedQueryAndUpdateOfCollection"})
 public final class Main implements Callable<Integer> {
-    @Parameters(paramLabel = "IMAGE", description = "The images to solve: FITS, PNG, JPEG or TIFF. Wildcards are supported.")
+    @Parameters(paramLabel = "IMAGE",
+            description = "The images to solve: FITS, PNG, JPEG, TIFF, BMP or camera raw (CR2, CR3, NEF, ARW, DNG...). Wildcards are supported.")
     private List<String> imageArguments = new ArrayList<>();
 
     @Option(names = "--download-catalog", paramLabel = "NAME", split = ",",

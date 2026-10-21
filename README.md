@@ -35,9 +35,10 @@ Download a catalog, once:
 asterion --download-catalog tycho2
 ```
 
-Then solve images, which can be FITS files (including compressed ones), PNG, JPEG, TIFF or BMP. Color images are
-solved from the sum of their channels (the luma of JPEG images, which is decoded alone), and color profiles are
-ignored:
+Then solve images, which can be FITS files (including compressed ones), PNG, JPEG, TIFF, BMP, or the raw files of
+cameras (CR2, CR3, NEF, ARW, DNG, PEF, ORF, RW2, RAF...), whose JPEG image made by the camera is solved, with the pixel
+size and the date of their EXIF data. Color images are solved from the sum of their channels (the luma of JPEG
+images, which is decoded alone), and color profiles are ignored:
 
 ```
 $ asterion M33.fits

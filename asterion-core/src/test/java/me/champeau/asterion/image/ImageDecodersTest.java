@@ -408,7 +408,8 @@ class ImageDecodersTest {
         var file = dir.resolve("text.txt");
         Files.writeString(file, "this is not an image");
         var e = assertThrows(IOException.class, () -> ImageLoader.load(file, 1));
-        assertEquals("Unsupported image format: " + file + ", expected FITS, PNG, JPEG, TIFF or BMP", e.getMessage());
+        assertEquals("Unsupported image format: " + file
+                + ", expected FITS, PNG, JPEG, TIFF, BMP or the raw file of a camera (CR2, CR3, NEF, ARW, DNG...)", e.getMessage());
         Files.write(file, new byte[0]);
         assertThrows(IOException.class, () -> ImageLoader.load(file, 1));
     }
