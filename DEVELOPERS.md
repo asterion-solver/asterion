@@ -91,6 +91,7 @@ and point `GRAALVM_HOME` to it. There is no GraalVM 25.4 for macOS on Intel, whi
 ./gradlew nativeZip             # packages it for the current platform, with the web interface
 ./gradlew :asterion-core:jmh -Pjmh.includes=Decode   # microbenchmarks of the hot loops, see asterion-core/src/jmh
 ./gradlew installDist           # JVM distribution, in asterion-cli/build/install
+./gradlew test jacocoTestReport # coverage of the tests, in <module>/build/reports/jacoco/test/html
 ```
 
 The native executable is `asterion-cli/build/native/nativeCompile/asterion`, a single file: images are

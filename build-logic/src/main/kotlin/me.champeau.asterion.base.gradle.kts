@@ -1,5 +1,6 @@
 plugins {
     java
+    jacoco
     id("com.diffplug.spotless")
 }
 
@@ -33,6 +34,18 @@ testing {
                 }
             }
         }
+    }
+}
+
+// coverage of the tests: `./gradlew test jacocoTestReport` writes build/reports/jacoco/test/html
+jacoco {
+    toolVersion = catalog.findVersion("jacoco").get().requiredVersion
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    reports {
+        xml.required = true
+        html.required = true
     }
 }
 
