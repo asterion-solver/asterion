@@ -391,11 +391,10 @@ public final class Main implements Callable<Integer> {
             console.println("Packing " + name);
             entries.add(CatalogArchive.pack(index, name, description, packDirectory, CatalogArchive.MAX_PART_SIZE));
         }
-        try (var writer = Files.newBufferedWriter(packDirectory.resolve(CatalogArchive.MANIFEST), StandardCharsets.UTF_8)) {
-            CatalogArchive.writeManifest(entries, writer);
-        }
-        console.println(
-                "Packed %d catalogs in %s, for the release catalogs-v%d".formatted(entries.size(), packDirectory, StarIndex.VERSION));
+        // the manifest of a release, which the directory may contain already, keeps its other catalogs
+        var all = CatalogArchive.updateManifest(packDirectory, entries);
+        console.println("Packed %d catalogs in %s, for the release catalogs-v%d, whose manifest lists %d catalogs".formatted(entries.size(),
+                packDirectory, StarIndex.VERSION, all.size()));
     }
 
     private void listCatalogs(Path directory, Consumer<String> out) throws IOException {

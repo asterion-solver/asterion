@@ -84,6 +84,22 @@ class CatalogArchiveTest {
     }
 
     @Test
+    void addsCatalogsToTheManifestOfARelease(@TempDir Path dir) throws IOException {
+        var packed = dir.resolve("packed");
+        var tycho2 = CatalogArchive.pack(randomFile(dir, 100_000), "tycho2", "Tycho-2", packed, Long.MAX_VALUE);
+        var gaia = CatalogArchive.pack(randomFile(dir, 200_000), "gaia-500", "Gaia DR3", packed, Long.MAX_VALUE);
+        assertEquals(List.of(gaia, tycho2), CatalogArchive.updateManifest(packed, List.of(tycho2, gaia)));
+
+        // a catalog which is added, and one which is packed again
+        var dense = CatalogArchive.pack(randomFile(dir, 300_000), "gaia-3000", "Gaia DR3, dense", packed, Long.MAX_VALUE);
+        var repacked = CatalogArchive.pack(randomFile(dir, 150_000), "tycho2", "Tycho-2, again", packed, Long.MAX_VALUE);
+        var entries = CatalogArchive.updateManifest(packed, List.of(dense, repacked));
+
+        assertEquals(List.of(dense, gaia, repacked), entries);
+        assertEquals(entries, CatalogArchive.readManifest(Files.readString(packed.resolve(CatalogArchive.MANIFEST))));
+    }
+
+    @Test
     void writesAndReadsManifests(@TempDir Path dir) throws IOException {
         var index = randomFile(dir, 500_000);
         var entry = CatalogArchive.pack(index, "gaia-500", "Gaia DR3, 500 stars per square degree", dir.resolve("packed"), 100_000);

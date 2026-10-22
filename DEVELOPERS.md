@@ -148,11 +148,16 @@ Asterion downloads the files it can read. A release contains the indexes compres
 parts of less than 2 GB for GitHub, and a manifest, `catalogs.properties`, which lists their sizes and
 SHA-256 checksums. Catalogs which aren't published, or can't be downloaded, are built from their sources.
 
-`./publish-catalogs.sh` builds `tycho2`, `gaia-500` and `gaia-2000` from their sources, packs them and uploads
-them with the GitHub CLI, which must be logged in with the right to create releases in the organization.
-It needs about 30 GB of disk space and 8 GB of memory, and works in `build/publish-catalogs`: when it's
-interrupted, running it again resumes the downloads. It must run again when the format of index files
-changes, which creates a new release, or when the indexes change.
+`./publish-catalogs.sh` builds the published catalogs from their sources, packs them and uploads them with the
+GitHub CLI, which must be logged in with the right to create releases in the organization. It needs about 30 GB
+of disk space and 8 GB of memory, more for `gaia-3000`, and works in `build/publish-catalogs`: when it's
+interrupted, running it again resumes the downloads. It must run again when the format of index files changes,
+which creates a new release, or when the indexes change.
+
+The catalogs which are published already are kept as they are, unless their index is in
+`build/publish-catalogs/catalogs`: a catalog is added to the release by adding it to the list of the script,
+and its index to that directory when it was built already. `DRY_RUN=1` stops the script before it uploads
+anything, with the files to publish in `build/publish-catalogs/release`.
 
 The script uses two hidden options of the command line tool:
 

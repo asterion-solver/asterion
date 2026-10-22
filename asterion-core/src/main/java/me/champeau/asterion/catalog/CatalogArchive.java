@@ -22,6 +22,7 @@ import java.io.SequenceInputStream;
 import java.io.StringReader;
 import java.io.UncheckedIOException;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -36,6 +37,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -171,6 +173,27 @@ public final class CatalogArchive {
             }
         }
         properties.store(writer, "Catalogs of Asterion Solver");
+    }
+
+    /**
+     * Writes the manifest of the catalogs packed in a directory. When there is a manifest already,
+     * such as the one of a release which catalogs are added to, its other catalogs are kept.
+     *
+     * @param packed the catalogs which were packed, which replace the ones of the same name
+     * @return all the catalogs of the manifest, sorted by name
+     */
+    public static List<Entry> updateManifest(Path directory, List<Entry> packed) throws IOException {
+        var manifest = directory.resolve(MANIFEST);
+        var entries = new TreeMap<String, Entry>();
+        if (Files.exists(manifest)) {
+            readManifest(Files.readString(manifest, StandardCharsets.UTF_8)).forEach(entry -> entries.put(entry.name(), entry));
+        }
+        packed.forEach(entry -> entries.put(entry.name(), entry));
+        var all = List.copyOf(entries.values());
+        try (var writer = Files.newBufferedWriter(manifest, StandardCharsets.UTF_8)) {
+            writeManifest(all, writer);
+        }
+        return all;
     }
 
     /** Reads the manifest of a release. */

@@ -100,8 +100,10 @@ solves fields which are wider than its minimum: one catalog is enough.
 | High       | `gaia-500`  | Gaia DR3, the 500 brightest stars of each square degree: 21 million stars | 0.15° (9′) and up | 1.5 GB | 1.9 GB |
 | High+      | `gaia-1000` | Gaia DR3, 1000 stars per square degree: 41 million stars  | 0.15° (9′) and up, sometimes 0.12° (7′) | 3.1 GB | 3.7 GB |
 | Very high  | `gaia-2000` | Gaia DR3, 2000 stars per square degree: 83 million stars  | 0.1° (6′) and up  | 6.1 GB   | 7.4 GB |
+| Ultra      | `gaia-3000` | Gaia DR3, 3000 stars per square degree: 122 million stars | about 0.08° (5′) and up, estimated | 10.7 GB | 12.9 GB |
 
-These limits were measured by solving fields of the Digitized Sky Survey blindly, at two places of the sky.
+These limits were measured by solving fields of the Digitized Sky Survey blindly, at two places of the sky,
+except for `gaia-3000`, whose limit is computed from its density.
 Images with fewer stars, such as very short exposures, may need a wider field.
 
 There is no upper limit: images taken with wide angle lenses solve too, up to about 130° across, including

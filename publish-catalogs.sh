@@ -7,12 +7,14 @@
 # usage: ./publish-catalogs.sh [work directory] [owner/repository]
 #
 # The work directory defaults to build/publish-catalogs: when the script is interrupted, running it
-# again resumes the downloads. Indexes which are already in its catalogs directory aren't built again. The repository defaults to asterion-solver/catalogs, the one Asterion
-# downloads catalogs from.
+# again resumes the downloads. Indexes which are already in its catalogs directory aren't built again,
+# and catalogs which are published already aren't either: an index which was built elsewhere is
+# published by putting it in that directory. The repository defaults to asterion-solver/catalogs, the
+# one Asterion downloads catalogs from.
 #
 # The release is named after the format of index files, e.g. catalogs-v1: Asterion downloads the
 # catalogs of the format it reads. Running the script again uploads the files which changed, and the
-# manifest.
+# manifest. With DRY_RUN=1, it stops before uploading anything.
 set -euo pipefail
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
@@ -23,27 +25,38 @@ fi
 ROOT=$(cd "$(dirname "$0")" && pwd)
 WORK=${1:-$ROOT/build/publish-catalogs}
 REPOSITORY=${2:-asterion-solver/catalogs}
-CATALOGS=tycho2,gaia-500,gaia-1000,gaia-2000
+CATALOGS=tycho2,gaia-500,gaia-1000,gaia-2000,gaia-3000
+# the release of the format of index files of this version of Asterion
+TAG=catalogs-v$(sed -n 's/.*int VERSION = \([0-9]*\);.*/\1/p' "$ROOT/asterion-core/src/main/java/me/champeau/asterion/index/StarIndex.java")
 
-# the files of a previous run are packed again
+# the files of a previous run are packed again, with the manifest of the release: the catalogs which
+# aren't packed again keep their published files
+mkdir -p "$WORK/release"
 rm -f "$WORK"/release/*
+gh release download "$TAG" --repo "$REPOSITORY" --pattern catalogs.properties --dir "$WORK/release" 2> /dev/null || true
+PUBLISHED_CATALOGS=$(sed -n 's/^catalogs=//p' "$WORK/release/catalogs.properties" 2> /dev/null || true)
 
 "$ROOT/gradlew" -p "$ROOT" -q :asterion-cli:installDist
 ASTERION=$(ls "$ROOT"/asterion-cli/build/install/*/bin/asterion)
 
 # the indexes are built from the stars of the catalogs, not downloaded from a previous release;
 # downloads resume where they stopped if the script is interrupted. Indexes which are already in the
-# work directory are published as they are
+# work directory are published as they are, and the ones which are published already are kept
 MISSING=()
 for CATALOG in ${CATALOGS//,/ }; do
-    [ -f "$WORK/catalogs/$CATALOG.astx" ] || MISSING+=("$CATALOG")
+    if [ ! -f "$WORK/catalogs/$CATALOG.astx" ] && [[ ",$PUBLISHED_CATALOGS," != *",$CATALOG,"* ]]; then
+        MISSING+=("$CATALOG")
+    fi
 done
 if [ ${#MISSING[@]} -gt 0 ]; then
     "$ASTERION" --plain --catalog-dir "$WORK/catalogs" --from-sources --keep-downloads \
         --download-catalog "$(IFS=,; echo "${MISSING[*]}")"
 fi
-PACKED=$("$ASTERION" --plain --catalog-dir "$WORK/catalogs" --pack-catalogs "$WORK/release" | tee /dev/stderr)
-TAG=$(echo "$PACKED" | grep -o 'catalogs-v[0-9]*' | tail -1)
+"$ASTERION" --plain --catalog-dir "$WORK/catalogs" --pack-catalogs "$WORK/release"
+if [ "${DRY_RUN:-}" = 1 ]; then
+    echo "Dry run: the files to publish to $TAG are in $WORK/release"
+    exit 0
+fi
 
 if ! gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
     gh release create "$TAG" --repo "$REPOSITORY" --title "Star catalogs, index format ${TAG#catalogs-v}" --notes-file - <<EOF
