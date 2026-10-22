@@ -15,7 +15,10 @@
  */
 package me.champeau.asterion.cli.astap;
 
+import me.champeau.asterion.Locales;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
 import java.util.List;
 
@@ -24,10 +27,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class AstapIniTest {
     private static final String COMMAND_LINE = "astap/astap_cli -f img/m31.fit -d astap/db -o astap/out/m31";
 
+    private static final AstapOutcome SOLVED = new AstapOutcome(AstapStatus.SOLVED, null, AstapSamples.solution(AstapSamples.M31),
+            List.of("Warning scale was inaccurate! Set FOV=1.72d, scale=3.1\", FL=523mm"), 3.4, 42.4);
+
+    @ParameterizedTest
+    @FieldSource("me.champeau.asterion.Locales#UNUSUAL")
+    void writesTheSameFileWhateverTheLocale(String locale) {
+        assertEquals(AstapIni.format(SOLVED, COMMAND_LINE), Locales.with(locale, () -> AstapIni.format(SOLVED, COMMAND_LINE)));
+    }
+
     @Test
     void writesSolutionsLikeAstap() {
-        var outcome = new AstapOutcome(AstapStatus.SOLVED, null, AstapSamples.solution(AstapSamples.M31),
-                List.of("Warning scale was inaccurate! Set FOV=1.72d, scale=3.1\", FL=523mm"), 3.4, 42.4);
+        var outcome = SOLVED;
         // the .ini file written by ASTAP for the same solution
         assertEquals("""
                 PLTSOLVD=T

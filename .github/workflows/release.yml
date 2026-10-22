@@ -1,9 +1,9 @@
 name: Release
 
-# Releases a version: the native executables are built on each platform with that version, then
-# JReleaser tags the current commit, and publishes a GitHub release with the archives, their
-# checksums and a changelog. Finally, the version of gradle.properties becomes the next development
-# version, which is committed and pushed.
+# Releases a version: the native executables are built on each platform with that version, and the
+# N.I.N.A. plugin with the Windows one, then JReleaser tags the current commit, and publishes a GitHub
+# release with the archives, the plugin, their checksums and a changelog. Finally, the version of
+# gradle.properties becomes the next development version, which is committed and pushed.
 on:
   workflow_dispatch:
     inputs:
@@ -40,9 +40,15 @@ jobs:
     with:
       version: ${{ inputs.version }}
 
+  nina:
+    needs: build
+    uses: ./.github/workflows/nina.yml
+    with:
+      version: ${{ inputs.version }}
+
   release:
     name: Release
-    needs: build
+    needs: [ build, nina ]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -63,6 +69,10 @@ jobs:
           pattern: native-*
           path: artifacts
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: nina-plugin
+          path: artifacts
       - name: Release
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -31,6 +31,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
 
@@ -103,7 +104,7 @@ public final class GaiaDr3 {
              var tracker = ProgressTracker.start(progress, description, CHUNKS, "regions")) {
             pool.submit(() -> IntStream.range(0, CHUNKS).parallel().forEach(chunk -> {
                 try {
-                    var file = workDirectory.resolve("gaia-%03d.csv".formatted(chunk));
+                    var file = workDirectory.resolve(String.format(Locale.ROOT, "gaia-%03d.csv", chunk));
                     if (!Files.exists(file)) {
                         download(downloader, gaiaServers, chunk, perChunk, density, file);
                     }
@@ -118,7 +119,7 @@ public final class GaiaDr3 {
         progress.info("Reading Gaia DR3");
         var stars = new StarData(EPOCH, perChunk * CHUNKS);
         for (var chunk = 0; chunk < CHUNKS; chunk++) {
-            read(workDirectory.resolve("gaia-%03d.csv".formatted(chunk)), stars);
+            read(workDirectory.resolve(String.format(Locale.ROOT, "gaia-%03d.csv", chunk)), stars);
         }
         return stars;
     }

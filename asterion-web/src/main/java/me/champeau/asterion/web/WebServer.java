@@ -37,6 +37,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Executors;
@@ -449,6 +450,9 @@ public final class WebServer implements AutoCloseable {
     }
 
     public static void main(String[] args) throws IOException {
+        // what is written for other programs, such as numbers in JSON or FITS files and names of files, must not depend on the
+        // locale of the system, whose decimal separator may be a comma, or whose digits may not be ASCII
+        Locale.setDefault(Locale.ROOT);
         // nom-tam-fits logs the oddities of FITS files, which are reported as errors when they matter
         Logger.getLogger("nom.tam").setLevel(Level.OFF);
         var host = "127.0.0.1";

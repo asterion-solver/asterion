@@ -1,0 +1,103 @@
+<UserControl x:Class="Asterion.Nina.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible" />
+    </UserControl.Resources>
+    <StackPanel Margin="0,5,0,5">
+        <TextBlock TextWrapping="Wrap" FontWeight="Bold"
+                   Text="A very fast, modern plate solver. It can generally solve any image within milliseconds even in blind mode." />
+        <TextBlock TextWrapping="Wrap" Margin="0,4,0,8"
+                   Text="Asterion is included in the plugin: there is nothing else to install, only a star catalog to download below. gaia-500 or gaia-1000 is usually a good start." />
+        <TextBlock TextWrapping="Wrap" Text="{Binding Status}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                            <Setter Property="Foreground" Value="#E04040" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <DockPanel Margin="0,12,0,4">
+            <Button DockPanel.Dock="Right" MinWidth="70" Content="Refresh" Command="{Binding Refresh}"
+                    ToolTip="Read the catalogs again" />
+            <TextBlock VerticalAlignment="Center" FontWeight="Bold" Text="Star catalogs" />
+        </DockPanel>
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,4" Text="{Binding CatalogStatus}" />
+        <ItemsControl ItemsSource="{Binding Catalogs}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="0,3,0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontWeight="Bold" Text="{Binding Name}" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock TextWrapping="Wrap" Text="{Binding Description}" />
+                            <TextBlock Opacity="0.7" Text="{Binding State}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button MinWidth="80" Content="Download" Command="{Binding Download}" IsEnabled="{Binding CanDownload}"
+                                    Visibility="{Binding CanDownload, Converter={StaticResource Visible}}" />
+                            <Button MinWidth="80" Content="Remove" Command="{Binding Remove}" IsEnabled="{Binding CanRemove}"
+                                    Visibility="{Binding Installed, Converter={StaticResource Visible}}" />
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <DockPanel Margin="0,6,0,0" Visibility="{Binding Downloading, Converter={StaticResource Visible}}">
+            <Button DockPanel.Dock="Right" MinWidth="70" Margin="8,0,0,0" Content="Cancel" Command="{Binding CancelDownload}"
+                    ToolTip="Stop the download: downloading the catalog again resumes where it stopped" />
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" Text="{Binding DownloadStatus}" />
+                <ProgressBar Height="8" Margin="0,3,0,0" Minimum="0" Maximum="1"
+                             Value="{Binding DownloadFraction, Mode=OneWay}" IsIndeterminate="{Binding DownloadIndeterminate, Mode=OneWay}" />
+            </StackPanel>
+        </DockPanel>
+
+        <Expander Margin="0,16,0,0" Header="Advanced" IsExpanded="False">
+            <StackPanel Margin="0,6,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0" Text="Asterion executable" />
+                    <TextBox Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
+                             Text="{Binding ExecutablePath, UpdateSourceTrigger=LostFocus}"
+                             ToolTip="Another asterion executable than the one included in the plugin, such as a newer version" />
+                    <Button Grid.Row="0" Grid.Column="2" Margin="5,0,0,0" MinWidth="30" Content="..." Click="BrowseExecutable"
+                            ToolTip="Select an asterion executable" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,2,0,0" TextWrapping="Wrap" Opacity="0.7"
+                               Text="Empty: the executable included in the plugin. Set it only to use another version of Asterion." />
+                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,8,0" Text="Catalog directory" />
+                    <TextBox Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,8,0,0"
+                             Text="{Binding CatalogDirectory, UpdateSourceTrigger=LostFocus}"
+                             ToolTip="Where the catalogs are installed" />
+                    <Button Grid.Row="2" Grid.Column="2" Margin="5,8,0,0" MinWidth="30" Content="..." Click="BrowseCatalogDirectory"
+                            ToolTip="Select the directory of the catalogs" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,2,0,0" TextWrapping="Wrap" Opacity="0.7"
+                               Text="Empty: the default directory of Asterion, which its other tools share." />
+                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,8,0" Text="Timeout (s)" />
+                    <TextBox Grid.Row="4" Grid.Column="1" Width="60" HorizontalAlignment="Left" Margin="0,8,0,0"
+                             Text="{Binding TimeoutSeconds, UpdateSourceTrigger=LostFocus}"
+                             ToolTip="The time after which a solve is given up" />
+                </Grid>
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

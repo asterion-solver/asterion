@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeMap;
@@ -284,7 +285,7 @@ public final class CatalogArchive {
 
         private void next() throws IOException {
             finish();
-            file = directory.resolve("%s.%03d".formatted(prefix, parts.size()));
+            file = directory.resolve(String.format(Locale.ROOT, "%s.%03d", prefix, parts.size()));
             digest = sha256();
             current = new DigestOutputStream(Files.newOutputStream(file), digest);
             size = 0;

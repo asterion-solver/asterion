@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -45,8 +46,9 @@ public final class Tycho2 {
     /** The names of the files of the catalogue. */
     public static List<String> files() {
         var files = new ArrayList<String>();
+        // the names of files are ASCII whatever the locale, whose digits may not be
         for (var i = 0; i < 20; i++) {
-            files.add("tyc2.dat.%02d.gz".formatted(i));
+            files.add(String.format(Locale.ROOT, "tyc2.dat.%02d.gz", i));
         }
         files.add(SUPPLEMENT);
         return files;

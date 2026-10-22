@@ -15,11 +15,14 @@
  */
 package me.champeau.asterion.cli.astap;
 
+import me.champeau.asterion.Locales;
 import me.champeau.asterion.solver.Solution;
 import me.champeau.asterion.wcs.Wcs;
 import nom.tam.fits.Fits;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -30,6 +33,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AstapWcsFileTest {
     private static final AstapOutcome OUTCOME = new AstapOutcome(AstapStatus.SOLVED, null, AstapSamples.solution(AstapSamples.M31),
             List.of("Warning scale was inaccurate! Set FOV=1.72d, scale=3.1\", FL=523mm"), 3.4, 42.4);
+
+    @ParameterizedTest
+    @FieldSource("me.champeau.asterion.Locales#UNUSUAL")
+    void writesTheSameFileWhateverTheLocale(String locale) {
+        var cards = List.of("FILTER  = 'No filter'          / Optical filter name");
+        for (var sip : new boolean[]{false, true}) {
+            assertEquals(AstapWcsFile.format(cards, OUTCOME, "astap_cli -f m31.fit", sip, true),
+                    Locales.with(locale, () -> AstapWcsFile.format(cards, OUTCOME, "astap_cli -f m31.fit", sip, true)));
+        }
+    }
 
     @Test
     void writesSolutionsLikeAstap() {
