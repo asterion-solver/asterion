@@ -9,3 +9,8 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/native.yml
+
+  # the N.I.N.A. plugin, tested with the Windows executable which was just built
+  nina:
+    needs: build
+    uses: ./.github/workflows/nina.yml

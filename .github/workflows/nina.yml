@@ -1,26 +1,24 @@
 name: N.I.N.A. plugin
 
 # Builds and tests the N.I.N.A. plugin of integrations/nina, against the N.I.N.A. packages of its
-# Directory.Build.props. The plugin includes the Windows executable of Asterion: in a release, the one
-# which was just built, see release.yml, otherwise the one of the latest release. The plugin is
-# uploaded as the artifact `nina-plugin`.
+# Directory.Build.props, and uploads it as the artifact `nina-plugin`. The plugin includes the Windows
+# executable of Asterion, which its tests run: build.yml and release.yml call this workflow after
+# building the native executables, whose Windows one, the artifact `native-windows-x86_64` of the
+# same run, is used. Run on its own, the workflow uses the one of the latest release.
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'integrations/nina/**'
-      - '.github/workflows/nina.yml'
-  pull_request:
-    paths:
-      - 'integrations/nina/**'
-      - '.github/workflows/nina.yml'
   workflow_dispatch:
   workflow_call:
     inputs:
       version:
-        description: 'The version which is released: its native executables are artifacts of the calling workflow'
+        description: 'The version of the plugin, defaults to the one of gradle.properties'
         type: string
-        required: true
+        required: false
+        default: ''
+      executable-of-run:
+        description: 'Whether the Windows executable is the artifact native-windows-x86_64 of the calling run'
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   plugin:
@@ -35,14 +33,14 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: integrations/nina/global.json
-      - name: Download the executable of the release
-        if: inputs.version != ''
+      - name: Download the executable built by this run
+        if: inputs.executable-of-run
         uses: actions/download-artifact@v4
         with:
           name: native-windows-x86_64
           path: ${{ runner.temp }}/asterion
       - name: Download the executable of the latest release
-        if: inputs.version == ''
+        if: ${{ !inputs.executable-of-run }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release download --repo "$GITHUB_REPOSITORY" --pattern '*-windows-x86_64.zip' --dir "$RUNNER_TEMP/asterion"
