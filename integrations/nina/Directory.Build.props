@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- the packages of N.I.N.A. depend on a version of NINA.Accord.Imaging which isn't published: NuGet resolves the next one -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1603</WarningsNotAsErrors>
+    <!-- the version of the plugin, which is the one of Asterion: the release workflow sets it -->
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <Company>Cédric Champeau</Company>
+    <Product>Asterion Solver for N.I.N.A.</Product>
+    <Copyright>Copyright 2026 the original author or authors</Copyright>
+    <!-- the version of N.I.N.A. the plugin needs, and is built against: the first nightly with the plugin API of plate solvers -->
+    <NinaMinimumVersion>3.3.0.1069</NinaMinimumVersion>
+    <NinaVersion>$(NinaMinimumVersion)-nightly</NinaVersion>
+  </PropertyGroup>
+</Project>

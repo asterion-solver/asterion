@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- runs on any platform -->
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Asterion.Nina.Core\Asterion.Nina.Core.csproj" />
+  </ItemGroup>
+</Project>

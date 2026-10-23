@@ -227,7 +227,7 @@ final class Report {
     private static void field(StringBuilder sb, String name, Object value) {
         sb.append('"').append(name).append("\":");
         if (value instanceof String s) {
-            sb.append('"').append(s.replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+            Json.quote(sb, s);
         } else {
             sb.append(value);
         }

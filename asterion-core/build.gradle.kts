@@ -1,6 +1,8 @@
 plugins {
     id("me.champeau.asterion.library")
     id("me.champeau.asterion.jmh")
+    // helpers which the tests of the other modules share, such as Locales
+    `java-test-fixtures`
 }
 
 description = "Asterion Solver: a fast blind astrometric plate solving library"

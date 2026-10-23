@@ -1,0 +1,70 @@
+name: N.I.N.A. plugin
+
+# Builds and tests the N.I.N.A. plugin of integrations/nina, against the N.I.N.A. packages of its
+# Directory.Build.props, and uploads it as the artifact `nina-plugin`. The plugin includes the Windows
+# executable of Asterion, which its tests run: build.yml and release.yml call this workflow after
+# building the native executables, whose Windows one, the artifact `native-windows-x86_64` of the
+# same run, is used. Run on its own, the workflow uses the one of the latest release.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: 'The version of the plugin, defaults to the one of gradle.properties'
+        type: string
+        required: false
+        default: ''
+      executable-of-run:
+        description: 'Whether the Windows executable is the artifact native-windows-x86_64 of the calling run'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  plugin:
+    name: Plugin
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: bash
+        working-directory: integrations/nina
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: integrations/nina/global.json
+      - name: Download the executable built by this run
+        if: inputs.executable-of-run
+        uses: actions/download-artifact@v4
+        with:
+          name: native-windows-x86_64
+          path: ${{ runner.temp }}/asterion
+      - name: Download the executable of the latest release
+        if: ${{ !inputs.executable-of-run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo "$GITHUB_REPOSITORY" --pattern '*-windows-x86_64.zip' --dir "$RUNNER_TEMP/asterion"
+      - name: Unzip the executable
+        run: |
+          cd "$RUNNER_TEMP/asterion"
+          unzip -q ./*-windows-x86_64.zip
+          distribution=$(dirname "$(find "$PWD" -name asterion.exe | head -1)")
+          echo "ASTERION_DISTRIBUTION=$(cygpath -w "$distribution")" >> "$GITHUB_ENV"
+          echo "ASTERION_EXECUTABLE=$(cygpath -w "$distribution/asterion.exe")" >> "$GITHUB_ENV"
+      - name: Test
+        run: |
+          dotnet test tests/Asterion.Nina.Core.Tests -c Release
+          # the results of solutions, compared with the ones of N.I.N.A.'s ASTAP solver: on Windows only
+          dotnet test tests/Asterion.Nina.Tests -c Release
+      - name: Build the plugin
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # the plugin of a development build has the version of the next release
+          version=${VERSION:-$(grep '^version=' ../../gradle.properties | cut -d= -f2)}
+          dotnet build src/Asterion.Nina -c Release "-p:Version=${version%%-SNAPSHOT}" "-p:AsterionDistribution=$ASTERION_DISTRIBUTION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nina-plugin
+          path: integrations/nina/src/Asterion.Nina/bin/Release/asterion-nina-*.zip
+          if-no-files-found: error

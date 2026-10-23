@@ -1,0 +1,13 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:Asterion.Nina"
+                    x:Class="Asterion.Nina.Options">
+    <!-- the settings of the solver, in Options > Plate Solving -->
+    <DataTemplate DataType="{x:Type local:AsterionSolverProvider}">
+        <local:SettingsView DataContext="{Binding Settings}" />
+    </DataTemplate>
+    <!-- the same settings, on the page of the plugin: the key is its title, followed by _Options -->
+    <DataTemplate x:Key="Asterion Solver_Options">
+        <local:SettingsView DataContext="{Binding Settings}" />
+    </DataTemplate>
+</ResourceDictionary>

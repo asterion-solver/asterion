@@ -15,6 +15,7 @@
  */
 package me.champeau.asterion.cli;
 
+import me.champeau.asterion.Locales;
 import me.champeau.asterion.catalog.Catalogs;
 import me.champeau.asterion.catalog.StarData;
 import me.champeau.asterion.index.IndexBuilder;
@@ -22,7 +23,11 @@ import me.champeau.asterion.index.IndexOptions;
 import me.champeau.asterion.progress.ProgressListener;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,8 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReportTest {
-    @Test
-    void describesTheCatalogsAsJson(@TempDir Path directory) throws Exception {
+    /** Installs a small catalog in the directory, and a broken one. */
+    private static Path installCatalogs(Path directory) throws IOException {
         var random = new SplittableRandom(3);
         var stars = new StarData(2016.0, 20_000);
         for (var i = 0; i < 20_000; i++) {
@@ -43,8 +48,29 @@ class ReportTest {
         var file = directory.resolve("tycho2" + Catalogs.EXTENSION);
         IndexBuilder.build(stars, "tycho2", IndexOptions.defaults(), file, ProgressListener.none());
         Files.writeString(directory.resolve("broken" + Catalogs.EXTENSION), "not an index");
+        return file;
+    }
 
-        var json = Report.catalogsJson(directory, Catalogs.installed(directory), Catalogs.available(), "1.2.3");
+    private static String catalogsJson(Path directory) {
+        try {
+            return Report.catalogsJson(directory, Catalogs.installed(directory), Catalogs.available(), "1.2.3");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @ParameterizedTest
+    @FieldSource("me.champeau.asterion.Locales#UNUSUAL")
+    void describesTheCatalogsWhateverTheLocale(String locale, @TempDir Path directory) throws Exception {
+        installCatalogs(directory);
+        assertEquals(catalogsJson(directory), Locales.with(locale, () -> catalogsJson(directory)));
+    }
+
+    @Test
+    void describesTheCatalogsAsJson(@TempDir Path directory) throws Exception {
+        var file = installCatalogs(directory);
+
+        var json = catalogsJson(directory);
 
         assertTrue(
                 json.startsWith(

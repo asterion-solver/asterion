@@ -15,12 +15,15 @@
  */
 package me.champeau.asterion.solver;
 
+import me.champeau.asterion.Locales;
 import me.champeau.asterion.SyntheticSky;
 import nom.tam.fits.Fits;
 import nom.tam.fits.ImageHDU;
 import nom.tam.util.FitsFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -87,6 +90,14 @@ class SolutionFilesTest {
         assertTrue(header.contains("CRVAL1  = "));
         assertTrue(header.contains("NMATCH  =                    2"));
         assertTrue(header.contains("END     "));
+    }
+
+    @ParameterizedTest
+    @FieldSource("me.champeau.asterion.Locales#UNUSUAL")
+    void writesTheSameFilesWhateverTheLocale(String locale) {
+        var solution = solution();
+        assertEquals(SolutionFiles.wcsHeader(solution), Locales.with(locale, () -> SolutionFiles.wcsHeader(solution)));
+        assertEquals(SolutionFiles.matchesCsv(solution), Locales.with(locale, () -> SolutionFiles.matchesCsv(solution)));
     }
 
     @Test

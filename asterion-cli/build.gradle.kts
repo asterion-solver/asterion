@@ -18,6 +18,7 @@ dependencies {
         runtimeOnly(libs.tamboui.panama.backend)
     }
     annotationProcessor(libs.picocli.codegen)
+    testImplementation(testFixtures(projects.asterionCore))
     // the archive of the command line tool contains the web interface too
     bundledExecutables(projects.asterionWeb)
 }

@@ -54,6 +54,17 @@ public interface ProgressListener {
      * @param output receives the lines
      */
     static ProgressListener text(Consumer<String> output) {
-        return new TextProgressListener(output);
+        return throttled(new TextProgressListener(output), 50);
+    }
+
+    /**
+     * A listener which forwards the progress of steps which have many units of work to another one
+     * a given number of times per step only, and everything else as it comes.
+     *
+     * @param listener receives what is forwarded
+     * @param reportsPerStep how many times the progress of a step is forwarded, such as 100 for every 1%
+     */
+    static ProgressListener throttled(ProgressListener listener, int reportsPerStep) {
+        return new ThrottledProgressListener(listener, reportsPerStep);
     }
 }

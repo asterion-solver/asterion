@@ -48,6 +48,12 @@ jreleaser {
     checksum {
         individual = false
     }
+    // the N.I.N.A. plugin, built by the release workflow, see .github/workflows/nina.yml
+    files {
+        artifact {
+            path = layout.projectDirectory.file("artifacts/$executableName-nina-{{projectVersion}}.zip")
+        }
+    }
     distributions {
         create(executableName) {
             distributionType = DistributionType.BINARY

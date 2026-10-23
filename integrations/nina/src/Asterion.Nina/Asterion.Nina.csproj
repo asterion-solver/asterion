@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <!-- builds on Linux and macOS too: only running the plugin needs Windows -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Asterion.Nina</AssemblyName>
+    <RootNamespace>Asterion.Nina</RootNamespace>
+    <AssemblyTitle>Asterion Solver</AssemblyTitle>
+    <Description>A very fast, modern plate solver. It can generally solve any image within milliseconds even in blind mode.</Description>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- N.I.N.A. provides its assemblies at runtime: they aren't copied -->
+    <PackageReference Include="NINA.Plugin" Version="$(NinaVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <ProjectReference Include="..\Asterion.Nina.Core\Asterion.Nina.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Asterion.Nina.Tests" />
+    <!-- the other metadata of the plugin are in AssemblyInfo.cs -->
+    <AssemblyMetadata Include="MinimumApplicationVersion" Value="$(NinaMinimumVersion)" />
+  </ItemGroup>
+  <!--
+    The files of the plugin, without the assemblies which N.I.N.A. provides, in
+    bin/<configuration>/plugin. With -p:AsterionDistribution=<the unzipped Windows distribution of
+    Asterion>, it also has asterion.exe and its licenses, and is zipped as the plugin to publish.
+  -->
+  <PropertyGroup>
+    <PluginDirectory>$(MSBuildProjectDirectory)/bin/$(Configuration)/plugin/</PluginDirectory>
+    <PluginZip>$(MSBuildProjectDirectory)/bin/$(Configuration)/asterion-nina-$(Version).zip</PluginZip>
+  </PropertyGroup>
+  <Target Name="CollectPlugin" AfterTargets="Build">
+    <ItemGroup>
+      <PluginFile Include="$(OutDir)Asterion.Nina.dll;$(OutDir)Asterion.Nina.pdb;$(OutDir)Asterion.Nina.Core.dll;$(OutDir)Asterion.Nina.Core.pdb" />
+      <PluginFile Include="$(AsterionDistribution)/asterion.exe;$(AsterionDistribution)/LICENSE.txt" Condition="'$(AsterionDistribution)' != ''" />
+      <ThirdPartyFile Include="$(AsterionDistribution)/third-party/*" Condition="'$(AsterionDistribution)' != ''" />
+    </ItemGroup>
+    <Error Condition="'$(AsterionDistribution)' != '' And !Exists('$(AsterionDistribution)/asterion.exe')"
+           Text="There is no asterion.exe in $(AsterionDistribution)" />
+    <RemoveDir Directories="$(PluginDirectory)" />
+    <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(PluginDirectory)" />
+    <Copy SourceFiles="@(ThirdPartyFile)" DestinationFolder="$(PluginDirectory)third-party" />
+    <ZipDirectory Condition="'$(AsterionDistribution)' != ''" SourceDirectory="$(PluginDirectory)" DestinationFile="$(PluginZip)" Overwrite="true" />
+    <Message Importance="high" Condition="'$(AsterionDistribution)' != ''" Text="Asterion.Nina -> $(PluginZip)" />
+  </Target>
+</Project>

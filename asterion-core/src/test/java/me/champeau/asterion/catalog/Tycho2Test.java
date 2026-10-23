@@ -15,8 +15,11 @@
  */
 package me.champeau.asterion.catalog;
 
+import me.champeau.asterion.Locales;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.FieldSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +39,14 @@ class Tycho2Test {
             0002 00580 1|T|003.03708871|+01.57351477|       |       | 42.9| 39.5|     |     | |11.688|0.122|11.171|0.121|999|T|      \s
             0002 01127 2|H|004.36837051|+00.31948829|  -32.1|   -9.1| 13.6|  8.3|  8.2|  5.0|H|      |     |10.279|0.041| 75| |  1397B
             """;
+
+    @ParameterizedTest
+    @FieldSource("me.champeau.asterion.Locales#UNUSUAL")
+    void namesTheFilesWhateverTheLocale(String locale) {
+        var files = Locales.with(locale, Tycho2::files);
+        assertEquals("tyc2.dat.07.gz", files.get(7));
+        assertEquals(Tycho2.files(), files);
+    }
 
     @Test
     void readsCatalogue(@TempDir Path directory) throws IOException {

@@ -15,18 +15,11 @@
  */
 package me.champeau.asterion.progress;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
-/** Describes progress as lines of text. */
+/** Describes progress as lines of text: see {@link ProgressListener#text}, which throttles it. */
 final class TextProgressListener implements ProgressListener {
-    /** Steps with more units of work than this are reported every 2% only. */
-    private static final int REPORTS_PER_STEP = 50;
-
     private final Consumer<String> output;
-    /** The last part of each step which was reported, out of REPORTS_PER_STEP. */
-    private final Map<ProgressStep, Long> reported = new ConcurrentHashMap<>();
 
     TextProgressListener(Consumer<String> output) {
         this.output = output;
@@ -44,13 +37,6 @@ final class TextProgressListener implements ProgressListener {
             print("  " + update.detail());
             return;
         }
-        if (step.hasTotal() && step.total() > REPORTS_PER_STEP && update.completed() < step.total()) {
-            var part = update.completed() * REPORTS_PER_STEP / step.total();
-            if (part <= reported.getOrDefault(step, -1L)) {
-                return;
-            }
-            reported.put(step, part);
-        }
         var line = new StringBuilder("  ").append(update.completed());
         if (step.hasTotal()) {
             line.append('/').append(step.total());
@@ -60,11 +46,6 @@ final class TextProgressListener implements ProgressListener {
             line.append(" (").append(update.bytes() / (1024 * 1024)).append(" MB)");
         }
         print(line.toString());
-    }
-
-    @Override
-    public void finished(ProgressStep step) {
-        reported.remove(step);
     }
 
     @Override

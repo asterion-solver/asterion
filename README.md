@@ -89,6 +89,20 @@ repository](https://github.com/asterion-solver/catalogs/releases). They are stor
 unless `--catalog-dir` or the `ASTERION_CATALOGS` environment variable says otherwise.
 `asterion --list-catalogs` shows what is installed and what is available, as JSON with `--json`.
 
+With `--json`, `--download-catalog` prints its progress for the programs which run it, as a JSON object per
+line. Each object has an `event`:
+
+| Event       | Fields                                                                                   |
+|-------------|------------------------------------------------------------------------------------------|
+| `step`      | `step`, its description, then `total` (when known) and `unit` of its work                |
+| `progress`  | `step`, `completed`, `total` (when known), `unit`, `fraction` from 0 to 1 (when known), `bytes` (for downloads) |
+| `detail`    | `step`, and a `message` about it                                                          |
+| `done`      | `step`, which is finished                                                                |
+| `info`      | `message`                                                                                |
+| `installed` | `catalog`, `file`, the index which is installed, and its `size` in bytes                 |
+
+An interrupted download resumes where it stopped the next time.
+
 ### Which catalog?
 
 Choose the catalog from the field of view of your images, along their shorter side. Each catalog also

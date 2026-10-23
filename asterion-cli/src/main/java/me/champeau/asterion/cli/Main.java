@@ -182,6 +182,9 @@ public final class Main implements Callable<Integer> {
     private boolean verbose;
 
     public static void main(String[] args) {
+        // what is written for other programs, such as numbers in JSON or FITS files and names of files, must not depend on the
+        // locale of the system, whose decimal separator may be a comma, or whose digits may not be ASCII
+        Locale.setDefault(Locale.ROOT);
         // nom-tam-fits logs the oddities of FITS files, which are reported as errors when they matter
         Logger.getLogger("nom.tam").setLevel(Level.OFF);
         // the ASTAP compatibility mode, for programs which call ASTAP: when installed as astap, or with "asterion astap"
@@ -240,12 +243,18 @@ public final class Main implements Callable<Integer> {
     }
 
     private int execute(Console console, Path directory, List<Catalogs.Descriptor> descriptors, List<Path> images) throws IOException {
+        // with --json, the progress of the installation is a JSON object per line, for the programs which run asterion
+        var installProgress = json ? JsonProgressListener.create(System.out::println) : console.progress();
         for (var descriptor : descriptors) {
             var indexOptions = descriptor.indexOptions();
             if (quadsPerCell > 0) {
                 indexOptions = indexOptions.withQuadsPerCell(quadsPerCell);
             }
-            Catalogs.install(descriptor, indexOptions, directory, keepDownloads, fromSources, console.progress());
+            var index = Catalogs.install(descriptor, indexOptions, directory, keepDownloads, fromSources, installProgress);
+            if (json) {
+                System.out.println(Json.object().field("event", "installed").field("catalog", descriptor.name())
+                        .field("file", index.toString()).field("size", Files.size(index)));
+            }
         }
         if (packDirectory != null) {
             packCatalogs(directory, console);

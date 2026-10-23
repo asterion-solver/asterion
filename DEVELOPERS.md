@@ -168,8 +168,9 @@ The script uses two hidden options of the command line tool:
 
 The `Build` workflow runs for each push to `main`, each pull request, and on demand. It builds and tests the
 native executable on every platform, and uploads the archives as artifacts of the run, named
-`native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days. Nothing is
-released. To test the Windows archive of the last build of `main`:
+`native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days. It then builds
+and tests the N.I.N.A. plugin with the Windows executable of the same run, and uploads it as `nina-plugin`. Nothing
+is released. To test the Windows archive of the last build of `main`:
 
 ```
 gh run download --repo asterion-solver/asterion -n native-windows-x86_64 \
