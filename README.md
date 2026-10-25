@@ -201,11 +201,13 @@ which are uploaded to it, with the options of the command line tool, and lists a
 ```
 $ asterion-web
 Asterion Solver 0.2.0, web interface: http://127.0.0.1:7531/
+To open it, click the address above (Ctrl+click in some terminals), or type it in a web browser
 Catalogs: /home/user/.asterion/catalogs
 Press Ctrl+C to stop
 ```
 
-Open the address in a browser. `--port` changes the port (0 for any free one), `--catalog-dir` the directory
+Click the address to open it, which some terminals only do on Ctrl+click (Cmd+click on macOS), or type it in a
+browser. `--port` changes the port (0 for any free one), `--catalog-dir` the directory
 of the catalogs. The port can also be chosen in the options of the page, which saves it in
 `~/.asterion/web.properties` for the next start; `--port` takes precedence over it. The interface only accepts connections from the same machine; `--host 0.0.0.0` opens it to
 the network, without any access control. An installed catalog can be disabled from the page, and enabled again:

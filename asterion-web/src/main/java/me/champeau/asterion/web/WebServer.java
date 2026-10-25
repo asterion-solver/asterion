@@ -495,6 +495,9 @@ public final class WebServer implements AutoCloseable {
         }
         Runtime.getRuntime().addShutdownHook(new Thread(web::close));
         System.out.println("Asterion Solver " + version() + ", web interface: " + web.uri());
+        // terminals open links on a modified click, if at all
+        var click = System.getProperty("os.name", "").startsWith("Mac") ? "Cmd+click" : "Ctrl+click";
+        System.out.println("To open it, click the address above (" + click + " in some terminals), or type it in a web browser");
         System.out.println("Catalogs: " + directory.toAbsolutePath());
         if (!host.equals("127.0.0.1") && !host.equals("localhost") && !host.equals("::1")) {
             System.out.println("Warning: the interface is reachable from other machines, and has no access control");
