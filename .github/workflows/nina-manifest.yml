@@ -1,0 +1,111 @@
+name: N.I.N.A. plugin manifest
+
+# Proposes the manifest of a release of the N.I.N.A. plugin to the plugin repository of N.I.N.A.,
+# isbeorn/nina.plugin.manifests: the manifest is written from the plugin zip of the GitHub release, by
+# integrations/nina/New-NinaManifest.ps1, validated by the scripts of that repository, then proposed
+# with a pull request from a fork of it. release.yml runs it after publishing a release.
+#
+# The pull request needs the repository variable NINA_MANIFESTS_FORK, the fork, such as owner/nina.plugin.manifests,
+# and the secret NINA_MANIFESTS_TOKEN, a token of its owner. A classic token with the public_repo scope pushes the
+# branch of the manifest to the fork and opens the pull request; a fine-grained token, which can only write to
+# the fork, pushes the branch, and the run gives the link which opens the pull request. Without them, the manifest
+# is only validated, and uploaded as an artifact of the run: see DEVELOPERS.md.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The released version, for example 0.3.0'
+        type: string
+        required: true
+      pull-request:
+        description: 'Whether to open the pull request: otherwise the manifest is only validated'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      pull-request:
+        type: boolean
+        default: true
+    secrets:
+      NINA_MANIFESTS_TOKEN:
+        required: false
+
+jobs:
+  manifest:
+    name: Manifest
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ inputs.version }}
+      # the folder of the plugin in the manifest repository, for N.I.N.A. 3, and its manifest of this version
+      MANIFEST: manifests/a/Asterion Solver/3.0.0/manifest.${{ inputs.version }}.0.json
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download the plugin of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # the manifest describes the zip which users download, with its checksum
+        run: gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "asterion-nina-$VERSION.zip" --dir "$RUNNER_TEMP"
+      - name: Write the manifest
+        shell: pwsh
+        run: >
+          ./integrations/nina/New-NinaManifest.ps1 -Version $env:VERSION -Repository $env:GITHUB_REPOSITORY
+          -Zip "$env:RUNNER_TEMP/asterion-nina-$env:VERSION.zip" -Output "$env:RUNNER_TEMP/manifest.json"
+      - name: Validate the manifest
+        id: validate
+        # with the script of the manifest repository, which checks the manifests of its last commit against the
+        # schema, and downloads their installer to check its checksum
+        run: |
+          # the whole history: the branch of the manifest is pushed to the fork, which may lack the latest commits
+          git clone --quiet https://github.com/isbeorn/nina.plugin.manifests.git "$RUNNER_TEMP/manifests"
+          cd "$RUNNER_TEMP/manifests"
+          mkdir -p "$(dirname "$MANIFEST")"
+          cp "$RUNNER_TEMP/manifest.json" "$MANIFEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST"
+          if git diff --cached --quiet; then
+            echo "::notice::The manifest of Asterion Solver $VERSION is in the plugin repository already"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit --quiet -F - <<EOF
+          Add Asterion Solver plugin $VERSION.0
+
+          The manifest of the release https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION
+          EOF
+          npm install --silent --no-audit --no-fund
+          node validate-latest-manifest.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nina-manifest
+          path: ${{ runner.temp }}/manifest.json
+          if-no-files-found: error
+      - name: Open the pull request
+        if: inputs.pull-request && steps.validate.outputs.published != 'true'
+        env:
+          FORK: ${{ vars.NINA_MANIFESTS_FORK }}
+          GH_TOKEN: ${{ secrets.NINA_MANIFESTS_TOKEN }}
+        run: |
+          if [ -z "$FORK" ] || [ -z "$GH_TOKEN" ]; then
+            echo "::warning::NINA_MANIFESTS_FORK or NINA_MANIFESTS_TOKEN isn't configured: the manifest is an artifact of the run, to propose by hand"
+            exit 0
+          fi
+          cd "$RUNNER_TEMP/manifests"
+          branch="asterion-solver-$VERSION"
+          # the branch is pushed again when the workflow is run again for the same version
+          git push --quiet --force "https://x-access-token:$GH_TOKEN@github.com/$FORK.git" "HEAD:refs/heads/$branch"
+          link="https://github.com/isbeorn/nina.plugin.manifests/compare/main...${FORK%%/*}:$branch?expand=1"
+          open=$(gh pr list --repo isbeorn/nina.plugin.manifests --head "$branch" --state open --json number --jq length || echo 0)
+          if [ "$open" -gt 0 ]; then
+            echo "The pull request of $branch is open already"
+          elif ! gh pr create --repo isbeorn/nina.plugin.manifests --base main --head "${FORK%%/*}:$branch" \
+                 --title "Add Asterion Solver plugin $VERSION.0" \
+                 --body "The manifest of the release https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION of Asterion Solver."; then
+            # a fine-grained token can't open pull requests in repositories of other owners
+            echo "::notice::The branch $branch is pushed to $FORK: open the pull request at $link"
+          fi
+          echo "### Manifest of Asterion Solver $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed to \`$FORK\`, branch \`$branch\`: [pull request]($link)" >> "$GITHUB_STEP_SUMMARY"

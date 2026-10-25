@@ -28,7 +28,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyMetadata("Repository", "https://github.com/asterion-solver/asterion")]
 [assembly: AssemblyMetadata("Homepage", "https://github.com/asterion-solver/asterion")]
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/asterion-solver/asterion/releases")]
-[assembly: AssemblyMetadata("Tags", "plate solving,blind solving,astrometry,centering,offline")]
+[assembly: AssemblyMetadata("Tags", "plate solving,blind solving,astrometry")]
 [assembly: AssemblyMetadata("LongDescription", """
 Asterion Solver is a very fast, modern plate solver. It can generally solve any image within milliseconds even in blind mode: no mount position, no focal length, no search radius needed. A 61 megapixel frame is read, analyzed and solved in about 50 ms on a modern desktop computer, so centering and plate-solve-and-sync stop being something you wait for, and a blind solve costs no more than a hinted one.
 
