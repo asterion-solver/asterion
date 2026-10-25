@@ -79,7 +79,7 @@ jobs:
           # the web interface: it prints its address, and serves the page and the API
           web=./asterion-web/build/native/nativeCompile/asterion-web
           $web --version
-          $web --port 0 > "$RUNNER_TEMP/web.out" 2>&1 &
+          $web --port 0 --no-browser > "$RUNNER_TEMP/web.out" 2>&1 &
           pid=$!
           url=
           for _ in $(seq 1 50); do

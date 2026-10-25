@@ -458,11 +458,13 @@ public final class WebServer implements AutoCloseable {
         var host = "127.0.0.1";
         Integer port = null;
         var directory = Catalogs.defaultDirectory();
+        var browser = true;
         for (var i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--host" -> host = value(args, ++i);
                 case "--port" -> port = Integer.parseInt(value(args, ++i));
                 case "--catalog-dir" -> directory = Path.of(value(args, ++i));
+                case "--no-browser" -> browser = false;
                 case "-V", "--version" -> {
                     System.out.println("Asterion Solver " + version() + ", web interface");
                     return;
@@ -497,7 +499,12 @@ public final class WebServer implements AutoCloseable {
         System.out.println("Asterion Solver " + version() + ", web interface: " + web.uri());
         // terminals open links on a modified click, if at all
         var click = System.getProperty("os.name", "").startsWith("Mac") ? "Cmd+click" : "Ctrl+click";
-        System.out.println("To open it, click the address above (" + click + " in some terminals), or type it in a web browser");
+        var open = "click the address above (" + click + " in some terminals), or type it in a web browser";
+        if (browser && Browser.open(web.uri())) {
+            System.out.println("Opening it in your browser. If it doesn't open, " + open);
+        } else {
+            System.out.println("To open it, " + open);
+        }
         System.out.println("Catalogs: " + directory.toAbsolutePath());
         if (!host.equals("127.0.0.1") && !host.equals("localhost") && !host.equals("::1")) {
             System.out.println("Warning: the interface is reachable from other machines, and has no access control");
@@ -515,10 +522,11 @@ public final class WebServer implements AutoCloseable {
 
     private static void usage() {
         System.out.println("""
-                Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>]
+                Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>] [--no-browser]
                   --host <address>         the address to listen on (default: 127.0.0.1, this machine only)
                   --port <port>            the port to listen on (default: the one saved from the interface, or 7531; 0 for any free port)
                   --catalog-dir <dir>      the directory of the catalogs (default: $ASTERION_CATALOGS, or ~/.asterion/catalogs)
+                  --no-browser             doesn't open the interface in the default browser
                   -V, --version            prints the version
                   -h, --help               prints this help""");
     }
