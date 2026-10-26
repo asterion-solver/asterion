@@ -179,7 +179,9 @@ final class Refiner {
      * and hardly more than stars scattered at random would. Real solutions match most of the
      * catalog stars of a small field, and in a large field their residuals are small or their odds
      * overwhelming. In landscape images, the foreground hides most of the catalog stars, but the
-     * stars of the sky match hundreds of times more catalog stars than chance would.
+     * stars of the sky match hundreds of times more catalog stars than chance would. Whatever the
+     * field, a solution which matches hardly more stars than chance would is a false match: in
+     * small images of planets, hundreds of "stars" leave a few catalog stars no chance to miss.
      *
      * @param pairs the number of stars matched with the catalog
      * @param catalogStars the number of catalog stars in the image
@@ -188,6 +190,9 @@ final class Refiner {
      * @param chancePairs the number of pairs which stars of the image scattered at random would make
      */
     static boolean doubtful(int pairs, int catalogStars, double rmsPixels, double logOdds, double chancePairs) {
+        if (pairs < MIN_CHANCE_FACTOR * chancePairs) {
+            return true;
+        }
         if (pairs >= CONVINCING_PAIRS && pairs >= CONVINCING_CHANCE_FACTOR * chancePairs) {
             return false;
         }
@@ -198,6 +203,8 @@ final class Refiner {
     private static final int CONVINCING_PAIRS = 30;
     /** How many times more pairs than chance would make convince, see {@link #doubtful}. */
     private static final double CONVINCING_CHANCE_FACTOR = 20;
+    /** Solutions which match fewer than this many times the pairs that chance would make are false matches, see {@link #doubtful}. */
+    private static final double MIN_CHANCE_FACTOR = 5;
     /** Solutions which match a smaller share of the catalog stars of their field are false matches, unless convincing. */
     private static final double DOUBTFUL_MATCHED_FRACTION = 0.2;
     /** Residuals beyond this many pixels don't make a solution with few matches convincing. */

@@ -57,7 +57,7 @@ public final class PlateSolver {
     private static final double EXTENDED_FWHM_FACTOR = 4;
     /** Detections whose light is less concentrated than this, compared to a gaussian star, aren't stars. */
     private static final double MIN_CONCENTRATION = 0.6;
-    /** The concentration of the light of point sources, see {@link #pointSources}. */
+    /** The concentration of the light of point sources, see {@link #pointSources} and {@link #compactStars}. */
     private static final double POINT_SOURCE_CONCENTRATION = 0.9;
     /** Point sources are at most this number of times larger than the smallest detections, see {@link #pointSources}. */
     private static final double POINT_SOURCE_FWHM_FACTOR = 1.5;
@@ -291,17 +291,19 @@ public final class PlateSolver {
      * The stars which aren't too large to be stars. Galaxies, nebulae and other extended objects
      * are detected as very bright, very large "stars", especially in stretched images, and would
      * be tried first: the quads of the index are made of point sources, so these never match.
-     * Saturated stars are larger than the others too, but much less, and they are kept. The list
-     * stays sorted by decreasing brightness.
+     * Saturated stars are larger than the others too, and processing can bloat the brightest ones
+     * as much as these objects, but their light stays concentrated: they are kept. The list stays
+     * sorted by decreasing brightness.
      *
      * @return the stars themselves when none is left out
      */
     static StarList compactStars(StarList stars) {
         var limit = EXTENDED_FWHM_FACTOR * stars.medianFwhm();
         var fwhm = stars.fwhm();
+        var concentration = stars.concentration();
         var keep = new boolean[stars.size()];
         for (var i = 0; i < stars.size(); i++) {
-            keep[i] = fwhm[i] <= limit;
+            keep[i] = fwhm[i] <= limit || concentration[i] >= POINT_SOURCE_CONCENTRATION;
         }
         return select(stars, keep);
     }
