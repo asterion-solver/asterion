@@ -254,15 +254,16 @@ public final class AstapCommand {
         }
     }
 
-    /** The output files are named after the image, without its extension, unless {@code -o} is given. */
+    /**
+     * The path of the output files, without their extension: the one given with {@code -o}, or else the
+     * one of the image. As ASTAP does, the extension is replaced, so that {@code -o solution.ini}, as KStars
+     * gives it, writes {@code solution.ini} and {@code solution.wcs}.
+     */
     Path outputBase() {
-        if (arguments.outputBase() != null) {
-            return arguments.outputBase().toAbsolutePath();
-        }
-        var image = arguments.image().toAbsolutePath();
-        var name = image.getFileName().toString();
+        var path = (arguments.outputBase() != null ? arguments.outputBase() : arguments.image()).toAbsolutePath();
+        var name = path.getFileName().toString();
         var dot = name.lastIndexOf('.');
-        return dot > 0 ? image.resolveSibling(name.substring(0, dot)) : image;
+        return dot > 0 ? path.resolveSibling(name.substring(0, dot)) : path;
     }
 
     private void print(String line) {
@@ -314,7 +315,7 @@ public final class AstapCommand {
                   -ra <hours>      right ascension of the start position (default: from the FITS header)
                   -spd <degrees>   declination + 90 of the start position (default: from the FITS header)
                   -z <factor>      binning applied before solving, 0 for automatic
-                  -o <base>        base path of the output files (default: the path of the image without extension)
+                  -o <path>        path of the output files, whose extension is replaced (default: the path of the image)
                   -sip             add SIP distortion coefficients
                   -wcs             write the .wcs file as a FITS header instead of text
                   -update          add the solution to the header of the FITS image
