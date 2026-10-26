@@ -19,6 +19,13 @@ Every statement below comes from one of these sources, and says which one when t
   (master, 2026-10).
 - **SharpCap**: closed source. Its command line was **observed** with SharpCap on Windows, through the
   log of command lines of Asterion's ASTAP compatibility mode (2026-10).
+- **ASTAP source**: `astap_command_line.lpr`, the command line program of ASTAP, as published in
+  [ortegaalfredo/astap-command-line](https://github.com/ortegaalfredo/astap-command-line) (2026-10).
+- **KStars**: plate solving through the StellarSolver library, `stellarsolver/externalextractorsolver.cpp` in
+  [rlancaste/stellarsolver](https://github.com/rlancaste/stellarsolver) (master, 2026-06).
+
+Siril doesn't call ASTAP: it solves with its own solver or with astrometry.net. Asterion's Siril script runs
+`asterion` directly.
 
 ## Executables
 
@@ -58,7 +65,7 @@ options doesn't matter. Command-line values take precedence over the values foun
 | `-check` | `y` / `n` | | Apply a check pattern filter: for raw color frames, binned 1x1 | program setting |
 | `-d` | path | | Directory of the star database | installation directory |
 | `-D` | abbreviation | | Star database to use: `d80`, `d50`, `d20`, `d05`, `v50`, `w08`, … | automatic |
-| `-o` | base path | | Base path and file name of the output files, without extension | input path without extension |
+| `-o` | path | | Path and file name of the output files: its extension, if it has one, is replaced (ASTAP source) | input path without extension |
 | `-sip` | (`y` / `n` in the manual) | | Add SIP distortion coefficients. The manual says it is "only required to deactivate SIP"; **observed**: `astap_cli` adds SIP only when `-sip` is given, and takes no value | no SIP (observed) |
 | `-speed` | `slow` / `auto` | | `slow` forces more overlap of the search areas | `auto` |
 | `-wcs` | | | Write the `.wcs` file as a standard FITS header, see [.wcs file](#wcs-file) | text `.wcs` |
@@ -95,8 +102,10 @@ expected one, it writes a warning such as `Warning scale was inaccurate! Set FOV
 ## Output
 
 ASTAP writes up to four files, in the directory of the input image, named after it without its
-extension: for `/data/img_001.fits`, the base is `/data/img_001`. With `-o <base>`, that base is used
-instead.
+extension: for `/data/img_001.fits`, the base is `/data/img_001`. With `-o <path>`, that path is used
+instead, without its extension too: ASTAP derives the names of its files with Pascal's `ChangeFileExt`, which
+replaces an extension (ASTAP source). `-o /tmp/solution` and `-o /tmp/solution.ini` both give the base
+`/tmp/solution`; KStars passes the second form.
 
 | File | When |
 |---|---|
@@ -277,6 +286,24 @@ Observed, its source isn't available.
 - Solves with Asterion's ASTAP compatibility mode. Which of the `.ini` and `.wcs` files it reads isn't
   known yet.
 
+### KStars
+
+Verified from the source of StellarSolver, the solving library of KStars and Ekos.
+
+- Looks for the executable at a configured path, by default `/usr/bin/astap`, `/bin/astap` or
+  `/opt/astap/astap` on Linux, `/Applications/ASTAP.app/Contents/MacOS/astap` on macOS and
+  `C:/Program Files/astap/astap.exe` on Windows, and refuses to solve when there is no file there.
+- Saves the image as a FITS file, then runs:
+  ```
+  <executable> -o <base>.ini -speed auto -f <image>.fits -wcs -z <downsample> [-fov <height>] [-ra <hours> -spd <dec + 90> -r <radius>] [-log]
+  ```
+  **`-o` is given with the `.ini` extension.** `-z` is `0` unless a downsample factor is set; `-fov`, and the
+  position, only when they are known; `-log` unless logging is off.
+- Waits for the process, up to its time limit plus 20%. **Uses the exit code**: anything but 0 is a failure.
+- Reads `<base>.ini`: fails when its first line has `F` after the `=`, and shows its `WARNING` and `ERROR`
+  lines. Otherwise reads `CRVAL1`, `CRVAL2`, `CDELT1`, `CROTA1` and `CD1_1` to `CD2_2`. With `-log`, shows
+  `<base>.log`. Then tries to load the WCS, without failing when it can't.
+
 ## Requirements for Asterion
 
 What a drop-in replacement needs, from the above:
@@ -291,7 +318,7 @@ What a drop-in replacement needs, from the above:
    them, with the keywords of [FITS header](#fits-header). `-fov 0` and a missing scale mean "unknown
    scale": a blind solve on the scale, not a search over a list of heights. There is no learn mode.
 4. **Files**: write `<base>.ini` in all cases, `<base>.wcs` only when solved, `<base>.log` with `-log`,
-   with the exact formats above. The reference pixel must be the center of the image, as clients may
+   with the exact formats above, where `<base>` is the `-o` path or the image path, without its extension. The reference pixel must be the center of the image, as clients may
    assume it. `CDELT` and `CROTA` follow the formulas above.
 5. **Exit codes**: follow the manual (0, 1, 2, 16, 32, 33, 34) rather than `astap_cli`'s observed
    behavior, since CCDciel interprets them and N.I.N.A. ignores them. Write the matching `ERROR` in the
