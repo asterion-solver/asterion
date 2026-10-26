@@ -19,16 +19,29 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 /**
  * Decodes PNG images: all the color types and bit depths, interlaced or not. Transparency is
  * ignored, and palette images are converted to colors.
+ * <p>
+ * The rows of an image which isn't interlaced are read in three stages, on three threads, which work on
+ * consecutive blocks of rows at the same time: one inflates them, which zlib does, one removes their
+ * filters, and the calling thread converts their pixels. The stages take comparable times on large
+ * images, so the read takes about as long as the slowest one, instead of all of them.
  */
 final class PngDecoder {
     private static final long SIGNATURE = 0x89504E470D0A1A0AL;
+    /** The size of the blocks of rows which are inflated at once. */
+    private static final int BLOCK_BYTES = 1 << 20;
+    /** The number of blocks: one for each stage, and one ready. */
+    private static final int BLOCKS = 4;
     private static final long MAX_DEFLATE_RATIO = 1032;
     private static final int GRAY = 0;
     private static final int RGB = 2;
@@ -141,7 +154,7 @@ final class PngDecoder {
         }
         var decoder = decoder0;
         var binner = new GrayBinner(width, height, binning);
-        try (var in = new InflaterInputStream(new ByteArrayInputStream(idat.toByteArray()), new java.util.zip.Inflater(), 1 << 16)) {
+        try (var in = new InflaterInputStream(new ByteArrayInputStream(idat.toByteArray()), new Inflater(), 1 << 16)) {
             if (interlaced) {
                 decoder.readInterlaced(in, binner);
             } else {
@@ -170,18 +183,130 @@ final class PngDecoder {
         return Math.max(1, channels * bitDepth / 8);
     }
 
+    /** A block of rows: each row starts with its filter byte. A stage which fails passes its failure instead. */
+    private record Block(
+            byte[] data,
+            int rows,
+            IOException failure) {
+        static Block failed(Exception failure) {
+            return new Block(null, 0,
+                    failure instanceof IOException e ? e : new IOException("Invalid PNG file: " + failure.getMessage(), failure));
+        }
+    }
+
     private void readSequential(InputStream in, GrayBinner binner) throws IOException {
-        var bytes = rowBytes(width);
+        var stride = rowBytes(width) + 1;
+        var rowsPerBlock = Math.max(1, BLOCK_BYTES / stride);
+        var blocks = (height + rowsPerBlock - 1) / rowsPerBlock;
+        var free = new ArrayBlockingQueue<byte[]>(BLOCKS);
+        var inflated = new ArrayBlockingQueue<Block>(BLOCKS);
+        var unfiltered = new ArrayBlockingQueue<Block>(BLOCKS);
+        for (var i = 0; i < Math.min(BLOCKS, blocks); i++) {
+            free.add(new byte[rowsPerBlock * stride]);
+        }
+        Runnable inflate = () -> inflate(in, stride, rowsPerBlock, free, inflated);
+        Runnable unfilter = () -> unfilterBlocks(stride, inflated, unfiltered);
+        if (blocks == 1) {
+            // a single block: there is nothing to overlap
+            inflate.run();
+            unfilter.run();
+            convertBlocks(stride, unfiltered, free, binner);
+            return;
+        }
+        var inflater = Thread.ofPlatform().name("png-inflater").daemon().start(inflate);
+        var unfilterer = Thread.ofPlatform().name("png-unfilter").daemon().start(unfilter);
+        try {
+            convertBlocks(stride, unfiltered, free, binner);
+        } finally {
+            // stops the other stages when the conversion fails
+            inflater.interrupt();
+            unfilterer.interrupt();
+        }
+    }
+
+    /** Inflates the rows of the image, block after block, until all of them are inflated or one fails. */
+    private void inflate(InputStream in, int stride, int rowsPerBlock, BlockingQueue<byte[]> free, BlockingQueue<Block> out) {
+        try {
+            for (var y = 0; y < height; y += rowsPerBlock) {
+                var rows = Math.min(rowsPerBlock, height - y);
+                var data = free.take();
+                Block block;
+                try {
+                    if (in.readNBytes(data, 0, rows * stride) != rows * stride) {
+                        throw new IOException("Truncated PNG image data");
+                    }
+                    block = new Block(data, rows, null);
+                } catch (IOException | RuntimeException e) {
+                    block = Block.failed(e);
+                }
+                out.put(block);
+                if (block.failure() != null) {
+                    return;
+                }
+            }
+        } catch (InterruptedException e) {
+            // the conversion failed: the rows aren't needed anymore
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Removes the filters of the rows of each block, as they are inflated. The previous row of the first
+     * row of a block is the last row of the previous block, which is kept before the block is passed on.
+     */
+    private void unfilterBlocks(int stride, BlockingQueue<Block> in, BlockingQueue<Block> out) {
+        var bytes = stride - 1;
         var previous = new byte[bytes];
-        var current = new byte[bytes];
+        try {
+            for (var y = 0; y < height;) {
+                var block = in.take();
+                if (block.failure() == null) {
+                    try {
+                        var data = block.data();
+                        for (var r = 0; r < block.rows(); r++) {
+                            var offset = r * stride + 1;
+                            if (r == 0) {
+                                unfilter(data[offset - 1], data, offset, bytes, previous, 0);
+                            } else {
+                                unfilter(data[offset - 1], data, offset, bytes, data, offset - stride);
+                            }
+                        }
+                        System.arraycopy(data, (block.rows() - 1) * stride + 1, previous, 0, bytes);
+                    } catch (IOException | RuntimeException e) {
+                        block = Block.failed(e);
+                    }
+                }
+                out.put(block);
+                if (block.failure() != null) {
+                    return;
+                }
+                y += block.rows();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Converts the pixels of each block, once its filters are removed, then gives its buffer back to the inflater. */
+    private void convertBlocks(int stride, BlockingQueue<Block> in, BlockingQueue<byte[]> free, GrayBinner binner) throws IOException {
         var values = new float[width];
-        for (var y = 0; y < height; y++) {
-            readRow(in, current, previous);
-            convert(current, width, values, 0, 1);
-            binner.row(values);
-            var swap = previous;
-            previous = current;
-            current = swap;
+        try {
+            for (var y = 0; y < height;) {
+                var block = in.take();
+                if (block.failure() != null) {
+                    throw block.failure();
+                }
+                var data = block.data();
+                for (var r = 0; r < block.rows(); r++) {
+                    convert(data, r * stride + 1, width, values, 0, 1);
+                    binner.row(values);
+                }
+                y += block.rows();
+                free.put(data);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedIOException("Interrupted while reading a PNG image");
         }
     }
 
@@ -199,7 +324,7 @@ final class PngDecoder {
             var current = new byte[bytes];
             for (var py = 0; py < passHeight; py++) {
                 readRow(in, current, previous);
-                convert(current, passWidth, values, 0, 1);
+                convert(current, 0, passWidth, values, 0, 1);
                 var y = pass[1] + py * pass[3];
                 for (var px = 0; px < passWidth; px++) {
                     image[y * width + pass[0] + px * pass[2]] = values[px];
@@ -222,57 +347,74 @@ final class PngDecoder {
         if (filter < 0 || in.readNBytes(row, 0, row.length) != row.length) {
             throw new IOException("Truncated PNG image data");
         }
-        var bpp = filterStride();
+        unfilter((byte) filter, row, 0, row.length, previous, 0);
+    }
+
+    /**
+     * Removes the filter of a row, in place, the previous row being already unfiltered. The bytes of
+     * the first pixel, which have no left neighbor, are handled first, so that the loops of the other
+     * ones have no tests.
+     */
+    private void unfilter(byte filter, byte[] row, int offset, int length, byte[] previous, int previousOffset) throws IOException {
+        var bpp = Math.min(filterStride(), length);
         switch (filter) {
             case 0 -> {
             }
             case 1 -> {
-                for (var i = bpp; i < row.length; i++) {
+                for (var i = offset + bpp; i < offset + length; i++) {
                     row[i] += row[i - bpp];
                 }
             }
             case 2 -> {
-                for (var i = 0; i < row.length; i++) {
-                    row[i] += previous[i];
+                for (var i = 0; i < length; i++) {
+                    row[offset + i] += previous[previousOffset + i];
                 }
             }
             case 3 -> {
-                for (var i = 0; i < row.length; i++) {
-                    var left = i >= bpp ? row[i - bpp] & 0xFF : 0;
-                    row[i] += (byte) ((left + (previous[i] & 0xFF)) >>> 1);
+                for (var i = 0; i < bpp; i++) {
+                    row[offset + i] += (byte) ((previous[previousOffset + i] & 0xFF) >>> 1);
+                }
+                for (var i = bpp; i < length; i++) {
+                    var left = row[offset + i - bpp] & 0xFF;
+                    row[offset + i] += (byte) ((left + (previous[previousOffset + i] & 0xFF)) >>> 1);
                 }
             }
             case 4 -> {
-                for (var i = 0; i < row.length; i++) {
-                    var a = i >= bpp ? row[i - bpp] & 0xFF : 0;
-                    var b = previous[i] & 0xFF;
-                    var c = i >= bpp ? previous[i - bpp] & 0xFF : 0;
-                    row[i] += (byte) paeth(a, b, c);
+                // without left neighbors, the predictor is the byte above
+                for (var i = 0; i < bpp; i++) {
+                    row[offset + i] += previous[previousOffset + i];
+                }
+                for (var i = bpp; i < length; i++) {
+                    var a = row[offset + i - bpp] & 0xFF;
+                    var b = previous[previousOffset + i] & 0xFF;
+                    var c = previous[previousOffset + i - bpp] & 0xFF;
+                    row[offset + i] += (byte) paeth(a, b, c);
                 }
             }
-            default -> throw new IOException("Invalid PNG filter " + filter);
+            default -> throw new IOException("Invalid PNG filter " + (filter & 0xFF));
         }
     }
 
+    /**
+     * The Paeth predictor: the one of a, b and c which is the closest to a + b - c, with ties broken
+     * in that order. Its comparisons aren't short-circuited, which lets the compiler select without jumps.
+     */
     private static int paeth(int a, int b, int c) {
-        var p = a + b - c;
-        var pa = Math.abs(p - a);
-        var pb = Math.abs(p - b);
-        var pc = Math.abs(p - c);
-        if (pa <= pb && pa <= pc) {
-            return a;
-        }
-        return pb <= pc ? b : c;
+        var pa = Math.abs(b - c);
+        var pb = Math.abs(a - c);
+        var pc = Math.abs(a + b - c - c);
+        var bc = pb <= pc ? b : c;
+        return (pa <= pb) & (pa <= pc) ? a : bc;
     }
 
     /** Converts the bytes of a row to the brightness of its pixels: the sum of their color channels. */
-    private void convert(byte[] row, int pixels, float[] values, int offset, int step) {
+    private void convert(byte[] row, int start, int pixels, float[] values, int offset, int step) {
         if (bitDepth < 8) {
             var perByte = 8 / bitDepth;
             var mask = (1 << bitDepth) - 1;
             for (var x = 0; x < pixels; x++) {
                 var shift = 8 - bitDepth * (x % perByte + 1);
-                var v = ((row[x / perByte] & 0xFF) >>> shift) & mask;
+                var v = ((row[start + x / perByte] & 0xFF) >>> shift) & mask;
                 values[offset + x * step] = colorType == PALETTE ? paletteEntry(v) : v;
             }
             return;
@@ -281,7 +423,7 @@ final class PngDecoder {
         var colors = colorType == GRAY_ALPHA ? 1 : colorType == RGBA ? 3 : channels;
         if (bitDepth == 8) {
             for (var x = 0; x < pixels; x++) {
-                var p = x * channels;
+                var p = start + x * channels;
                 if (colorType == PALETTE) {
                     values[offset + x * step] = paletteEntry(row[p] & 0xFF);
                 } else {
@@ -294,7 +436,7 @@ final class PngDecoder {
             }
         } else {
             for (var x = 0; x < pixels; x++) {
-                var p = 2 * x * channels;
+                var p = start + 2 * x * channels;
                 var sum = 0;
                 for (var c = 0; c < colors; c++) {
                     sum += ((row[p + 2 * c] & 0xFF) << 8) | (row[p + 2 * c + 1] & 0xFF);

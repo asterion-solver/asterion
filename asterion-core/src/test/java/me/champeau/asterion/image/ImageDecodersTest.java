@@ -33,20 +33,27 @@ import java.awt.image.ComponentColorModel;
 import java.awt.image.DataBuffer;
 import java.awt.image.IndexColorModel;
 import java.awt.image.Raster;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.function.Consumer;
+import java.util.zip.CRC32;
+import java.util.zip.DeflaterOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The decoders must give the pixels of ImageIO for every variant of the formats which ImageIO
@@ -90,10 +97,14 @@ class ImageDecodersTest {
     }
 
     private static BufferedImage image(int type) {
-        var image = new BufferedImage(WIDTH, HEIGHT, type);
+        return image(type, WIDTH, HEIGHT);
+    }
+
+    private static BufferedImage image(int type, int width, int height) {
+        var image = new BufferedImage(width, height, type);
         var raster = image.getRaster();
         var max = (1 << image.getColorModel().getComponentSize(0)) - 1;
-        paint(WIDTH, HEIGHT, raster.getNumBands(), (xy, levels) -> {
+        paint(width, height, raster.getNumBands(), (xy, levels) -> {
             for (var c = 0; c < raster.getNumBands(); c++) {
                 raster.setSample(xy[0], xy[1], c, (int) Math.round(Math.max(0, levels[c]) * max));
             }
@@ -382,7 +393,7 @@ class ImageDecodersTest {
             for (var damage = 0; damage < 12; damage++) {
                 byte[] damaged;
                 if (damage < 4) {
-                    damaged = java.util.Arrays.copyOf(data, (int) (data.length * (0.2 + 0.2 * damage)));
+                    damaged = Arrays.copyOf(data, (int) (data.length * (0.2 + 0.2 * damage)));
                 } else {
                     damaged = data.clone();
                     for (var i = 0; i < 1 + damage; i++) {
@@ -401,6 +412,102 @@ class ImageDecodersTest {
                 }, variant.name() + ", damage " + damage);
             }
         }
+    }
+
+    /** Images whose rows fill several of the blocks which the PNG decoder inflates on another thread. */
+    static List<Variant> largePngs() {
+        return List.of(
+                variant("large png rgb 8", image(BufferedImage.TYPE_3BYTE_BGR, 1500, 900), "png"),
+                variant("large png rgba 16", componentImage16(1200, 700), "png"));
+    }
+
+    private static BufferedImage componentImage16(int width, int height) {
+        var colorModel = new ComponentColorModel(ColorSpace.getInstance(ColorSpace.CS_sRGB), true, false,
+                Transparency.TRANSLUCENT, DataBuffer.TYPE_USHORT);
+        var image = new BufferedImage(colorModel, colorModel.createCompatibleWritableRaster(width, height), false, null);
+        var raster = image.getRaster();
+        paint(width, height, raster.getNumBands(), (xy, levels) -> {
+            for (var c = 0; c < raster.getNumBands(); c++) {
+                raster.setSample(xy[0], xy[1], c, (int) Math.round(Math.max(0, levels[c]) * 65535));
+            }
+        });
+        return image;
+    }
+
+    @ParameterizedTest
+    @MethodSource("largePngs")
+    void decodesLargePngsLikeImageIo(Variant variant) throws IOException {
+        var file = write(variant);
+        var reference = ImageIoReference.gray(file);
+        var image = ImageLoader.load(file, 1).image();
+        assertArrayEquals(reference, image.data(), 0, variant.name());
+        // binned, the rows of a bin may come from two blocks
+        var binned = ImageLoader.load(file, 3).image();
+        var width = image.width();
+        for (var y = 0; y < binned.height(); y++) {
+            for (var x = 0; x < binned.width(); x++) {
+                var sum = 0f;
+                for (var sy = 0; sy < 3; sy++) {
+                    for (var sx = 0; sx < 3; sx++) {
+                        sum += reference[(3 * y + sy) * width + 3 * x + sx];
+                    }
+                }
+                assertEquals(sum, binned.data()[y * binned.width() + x], variant.name() + " at " + x + "," + y);
+            }
+        }
+    }
+
+    @Test
+    void rejectsLargePngsDamagedLaterCleanly() throws IOException {
+        var data = Files.readAllBytes(write(largePngs().getFirst()));
+        var file = dir.resolve("truncated.png");
+        Files.write(file, Arrays.copyOf(data, data.length / 2));
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> assertThrows(IOException.class, () -> ImageLoader.load(file, 1)));
+
+        // a row with an invalid filter, after many rows: the conversion fails while rows are still inflated
+        var width = 2000;
+        var height = 3000;
+        var rows = new ByteArrayOutputStream();
+        for (var y = 0; y < height; y++) {
+            rows.write(y == 500 ? 7 : y % 5);
+            rows.writeBytes(new byte[width]);
+        }
+        var invalid = dir.resolve("invalid-filter.png");
+        Files.write(invalid, png(width, height, rows.toByteArray()));
+        var e = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> assertThrows(IOException.class, () -> ImageLoader.load(invalid, 1)));
+        assertTrue(e.getMessage().contains("Invalid PNG filter 7"), e.getMessage());
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            while (Thread.getAllStackTraces().keySet().stream().anyMatch(t -> t.getName().startsWith("png-"))) {
+                Thread.sleep(10);
+            }
+        }, "the threads of the decoder stop");
+    }
+
+    /** A gray 8 bits PNG file, from its filtered rows. */
+    private static byte[] png(int width, int height, byte[] filteredRows) throws IOException {
+        var out = new ByteArrayOutputStream();
+        out.writeBytes(new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'});
+        var header = ByteBuffer.allocate(13).putInt(width).putInt(height).put((byte) 8).put((byte) 0)
+                .put((byte) 0).put((byte) 0).put((byte) 0).array();
+        chunk(out, "IHDR", header);
+        var deflated = new ByteArrayOutputStream();
+        try (var deflater = new DeflaterOutputStream(deflated)) {
+            deflater.write(filteredRows);
+        }
+        chunk(out, "IDAT", deflated.toByteArray());
+        chunk(out, "IEND", new byte[0]);
+        return out.toByteArray();
+    }
+
+    private static void chunk(ByteArrayOutputStream out, String type, byte[] data) {
+        var crc = new CRC32();
+        var typeBytes = type.getBytes(StandardCharsets.US_ASCII);
+        crc.update(typeBytes);
+        crc.update(data);
+        out.writeBytes(ByteBuffer.allocate(4).putInt(data.length).array());
+        out.writeBytes(typeBytes);
+        out.writeBytes(data);
+        out.writeBytes(ByteBuffer.allocate(4).putInt((int) crc.getValue()).array());
     }
 
     @Test
