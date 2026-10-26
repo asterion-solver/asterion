@@ -289,11 +289,18 @@ class PlateSolverTest {
         var y = new double[]{100, 200, 300, 400, 500, 600};
         var flux = new float[]{1e6f, 1e5f, 1e4f, 5e3f, 2e3f, 1e3f};
         var fwhm = new float[]{40, 9, 3.2f, 3, 3, 2.8f};
-        var compact = PlateSolver.compactStars(new StarList(x, y, flux, fwhm));
+        var spread = new float[]{0.3f, 1, 1, 1, 1, 1};
+        var compact = PlateSolver.compactStars(new StarList(x, y, flux, fwhm, spread));
         assertEquals(5, compact.size());
         assertEquals(200, compact.x(0));
         assertEquals(1e5f, compact.flux(0));
         assertEquals(600, compact.x(4));
+        // a star bloated by processing as much as the galaxy: its light is concentrated
+        var bloatedFwhm = new float[]{40, 40, 3.2f, 3, 3, 2.8f};
+        var bloatedConcentration = new float[]{0.3f, 1.1f, 1, 1, 1, 1};
+        var kept = PlateSolver.compactStars(new StarList(x, y, flux, bloatedFwhm, bloatedConcentration));
+        assertEquals(5, kept.size());
+        assertEquals(200, kept.x(0));
         // knots of a nebula: the size of stars, but their light spread rather than concentrated
         var concentration = new float[]{0.3f, 0.8f, 1.1f, 0.4f, 0.95f, 1};
         var concentrated = PlateSolver.concentratedStars(new StarList(x, y, flux, fwhm, concentration));
@@ -325,5 +332,12 @@ class PlateSolverTest {
         // landscapes: the foreground hides most of the catalog stars, but chance wouldn't match so many
         assertFalse(Refiner.doubtful(281, 1527, 0.34, 49, 0.25));
         assertTrue(Refiner.doubtful(25, 1527, 0.34, 20, 0.25));
+        // small images of planets: a fair share of the few catalog stars of the field matched, but
+        // the hundreds of "stars" around the planet would match about as many by chance
+        assertTrue(Refiner.doubtful(19, 86, 3.1, 30, 27.8));
+        assertTrue(Refiner.doubtful(24, 76, 3.3, 25, 20.9));
+        assertTrue(Refiner.doubtful(8, 30, 2.8, 22, 3));
+        // a dense cluster: many pairs by chance, but far more matched
+        assertFalse(Refiner.doubtful(601, 31036, 0.22, 537, 43.6));
     }
 }
