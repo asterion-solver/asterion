@@ -1,0 +1,44 @@
+name: Site
+
+# Deploys the site directory to GitHub Pages: https://asterion-solver.github.io/asterion/. It contains the
+# PixInsight update repository of the Asterion Solver script, site/pixinsight, which
+# integrations/pixinsight/build-repository.py writes for each release. The whole site is deployed each time:
+# other content, such as documentation, must be added to the site directory, or built here.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
