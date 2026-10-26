@@ -65,7 +65,8 @@ ASTERION_EXECUTABLE=/path/to/asterion dotnet test tests/Asterion.Nina.Core.Tests
 With `-p:AsterionDistribution=<the unzipped Windows distribution of Asterion>`, the build also packages
 the plugin, with `asterion.exe` and its licenses, as `src/Asterion.Nina/bin/Release/asterion-nina-<version>.zip`.
 The release workflow of the repository builds it this way, and publishes it with the other archives of a
-release.
+release. `New-NinaManifest.ps1` writes the manifest of a release for the plugin repository of N.I.N.A.: see
+"The N.I.N.A. plugin" in [DEVELOPERS.md](../../DEVELOPERS.md).
 
 ## AI-assisted development
 
