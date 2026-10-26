@@ -253,7 +253,8 @@ Its API is what the page uses, which other programs can call too. Its definition
 ## PixInsight and Siril
 
 A script solves the active image of PixInsight with Asterion and writes the solution in it, where
-PixInsight's own tools find it: see [integrations/pixinsight](integrations/pixinsight/README.md).
+PixInsight's own tools find it. It is installed from its PixInsight update repository,
+`https://asterion-solver.github.io/asterion/pixinsight/`: see [integrations/pixinsight](integrations/pixinsight/README.md).
 Another one does the same for the loaded image of Siril, with SIP distortion: see
 [integrations/siril](integrations/siril/README.md). Both list and download catalogs.
 

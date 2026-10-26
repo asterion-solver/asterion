@@ -46,7 +46,7 @@ CoreApplication.ensureMinimumVersion( 1, 9, 4 );
 #include <pjsr/astrometry/AstrometricMetadata.js>
 
 #define ASTERION_TITLE   "Asterion Solver"
-#define ASTERION_VERSION "0.1"
+#define ASTERION_VERSION "dev"
 #define ASTERION_SETTINGS "AsterionSolver"
 
 /*

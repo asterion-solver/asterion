@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xri version="1.0">
+   <description>
+      <p>Asterion Solver for PixInsight: a fast blind plate solver.</p>
+   </description>
+   <platform os="all" arch="noarch" version="1.9.4:1.9.99">
+      <package fileName="asterion-pixinsight-0.3.0.zip" sha1="2c027e22d7f76489f671df7611fbda302427dad9" type="script" releaseDate="20261023132358">
+         <title>Asterion Solver 0.3.0</title>
+         <description>
+            <p>Solves images blindly in a fraction of a second, and writes the astrometric solution in them, where the astrometry tools of PixInsight find it. The script is in Script &gt; Astrometry &gt; Asterion Solver.</p>
+            <p>It runs the asterion command line tool, which is installed separately: see https://github.com/asterion-solver/asterion. Its star catalogs are downloaded by asterion from the dialog of the script, over HTTPS, and checked with their SHA-256 checksums.</p>
+         </description>
+      </package>
+   </platform>
+</xri>

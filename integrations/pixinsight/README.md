@@ -6,12 +6,26 @@ Solution, AnnotateImage or MosaicByCoordinates.
 
 ## Installation
 
-1. Install Asterion Solver and download a catalog, see the [README](../../README.md): the `asterion`
-   executable must be in the `PATH`, or its path given in the dialog of the script.
-2. In PixInsight, Script > Feature Scripts..., Add, and select this directory (`integrations/pixinsight`).
-   The script appears in Script > Astrometry > Asterion Solver, next to ImageSolver, and stays there: the
-   directory is remembered from one session to the next. After updating the script, Script > Feature
-   Scripts..., Regenerate, picks the changes up.
+1. Install Asterion Solver, see the [README](../../README.md): the `asterion` executable must be in the
+   `PATH`, or its path given in the dialog of the script. Catalogs can be downloaded from the dialog.
+2. In PixInsight, Resources > Updates > Manage Repositories, add the repository of the script:
+
+   ```
+   https://asterion-solver.github.io/asterion/pixinsight/
+   ```
+
+   Then Resources > Updates > Check for Updates, select Asterion Solver, and restart PixInsight to
+   install it. The script appears in Script > Astrometry > Asterion Solver, next to ImageSolver. Its new
+   versions are offered the same way.
+
+The repository isn't signed yet: PixInsight asks to confirm before downloading from it.
+
+### From the sources
+
+To run the script of a working copy, in PixInsight, Script > Feature Scripts..., Add, and select this
+directory (`integrations/pixinsight`). The directory is remembered from one session to the next. After
+changing the script, Script > Feature Scripts..., Regenerate, picks the changes up. Don't install the script
+from the repository at the same time: the same script would be featured twice.
 
 ## Usage
 
@@ -30,6 +44,22 @@ Download button, which takes minutes and shows its progress in the console. When
 executable is wrong, the dialog says so and stays open to fix it.
 
 The settings of the dialog are remembered between runs.
+
+## What the script does on your computer
+
+- **Programs:** it runs the `asterion` executable, the one given in its dialog or found in the `PATH`, to
+  check its version, list and download catalogs, and solve images. It runs no other program.
+- **Network:** the script makes no connection itself. When you click Download, `asterion` downloads the
+  catalog over HTTPS from the [catalog releases](https://github.com/asterion-solver/catalogs/releases), and
+  checks it with its SHA-256 checksum before installing it. When these releases can't be reached, it builds
+  the catalog from its sources instead, over HTTPS: Gaia DR3 from the ESA Gaia archive and its mirrors
+  (gea.esac.esa.int, gaia.ari.uni-heidelberg.de, dc.g-vo.org, datalab.noirlab.edu, irsa.ipac.caltech.edu),
+  and Tycho-2 from the CDS (cdsarc.cds.unistra.fr).
+- **Files:** catalogs are stored outside the PixInsight installation, in `~/.asterion/catalogs`, or the
+  directory of the `ASTERION_CATALOGS` environment variable. To solve an image, the script writes it to a
+  temporary FITS file in the temporary directory of PixInsight, which is deleted once it is solved. The
+  solution is written in the image, in memory: it is saved when you save the image. The settings of the
+  dialog are kept in the settings of PixInsight.
 
 ## Headless use
 

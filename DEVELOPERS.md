@@ -77,6 +77,8 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
 - `integrations`: the scripts for [PixInsight](integrations/pixinsight/README.md) and
   [Siril](integrations/siril/README.md)
 - `docs`: specifications, such as the [interface of ASTAP](docs/astap-interface.md) which the compatibility mode follows
+- `site`: what GitHub Pages serves, such as the PixInsight update repository of the script, see
+  [Publishing the PixInsight script](#publishing-the-pixinsight-script)
 
 ## Building
 
@@ -163,6 +165,35 @@ The script uses two hidden options of the command line tool:
 
 - `--from-sources` builds indexes from the stars of the catalogs, instead of downloading them already indexed;
 - `--pack-catalogs <directory>` writes the compressed parts of the installed catalogs, and their manifest.
+
+## Publishing the PixInsight script
+
+The PixInsight script is installed from a PixInsight update repository,
+`https://asterion-solver.github.io/asterion/pixinsight/`: the `site/pixinsight` directory, which the `Site`
+workflow deploys to GitHub Pages when it changes on `main`. GitHub Pages must use GitHub Actions as its
+source (Settings > Pages). The repository is an index, `updates.xri`, and the package of a version, a zip of
+the files which PixInsight installs, relative to its installation directory.
+
+After a release, its package is written with:
+
+```
+integrations/pixinsight/build-repository.py 0.3.0
+```
+
+It packages the script and the license of the tag of the release, `v0.3.0`, stamped with the version, and
+dates the package with the publication of the GitHub release, which it reads with the GitHub CLI. The
+package is deterministic: PixInsight knows whether a package is installed by its SHA-1, so building the
+same release again gives the same package, which PixInsight doesn't offer again. The index lists only the
+new package, and the previous ones are removed: PixInsight installs every listed package which isn't
+installed, in no defined order. Committing and pushing `site/pixinsight` publishes it.
+
+`--working-tree` packages the script of the working copy instead, to test a package: `--output` writes it
+elsewhere, such as a directory served by `python3 -m http.server`, which PixInsight accepts as a repository at
+`http://localhost:8000/`.
+
+The repository isn't signed yet. Signing will be added to `build-repository.py`, with the keys of a Certified
+PixInsight Developer: the script gets an `.xsgn` signature in the package, and `updates.xri` a signature of
+its own. Both are made by PixInsight itself, on the machine which holds the keys.
 
 ## Testing a build before releasing
 
