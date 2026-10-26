@@ -3,7 +3,8 @@ name: N.I.N.A. plugin manifest
 # Proposes the manifest of a release of the N.I.N.A. plugin to the plugin repository of N.I.N.A.,
 # isbeorn/nina.plugin.manifests: the manifest is written from the plugin zip of the GitHub release, by
 # integrations/nina/New-NinaManifest.ps1, validated by the scripts of that repository, then proposed
-# with a pull request from a fork of it. release.yml runs it after publishing a release.
+# with a pull request from a fork of it. It is run by hand, for the releases which matter to N.I.N.A.: not every
+# release changes the plugin, or the executable which it bundles, in a way that N.I.N.A. users need.
 #
 # The pull request needs the repository variable NINA_MANIFESTS_FORK, the fork, such as owner/nina.plugin.manifests,
 # and the secret NINA_MANIFESTS_TOKEN, a token of its owner. A classic token with the public_repo scope pushes the
@@ -21,17 +22,6 @@ on:
         description: 'Whether to open the pull request: otherwise the manifest is only validated'
         type: boolean
         default: false
-  workflow_call:
-    inputs:
-      version:
-        type: string
-        required: true
-      pull-request:
-        type: boolean
-        default: true
-    secrets:
-      NINA_MANIFESTS_TOKEN:
-        required: false
 
 jobs:
   manifest:

@@ -3,8 +3,8 @@ name: Release
 # Releases a version: the native executables are built on each platform with that version, and the
 # N.I.N.A. plugin with the Windows one, then JReleaser tags the current commit, and publishes a GitHub
 # release with the archives, the plugin, their checksums and a changelog. Finally, the version of
-# gradle.properties becomes the next development version, which is committed and pushed, and the
-# manifest of the plugin is proposed to N.I.N.A., see nina-manifest.yml.
+# gradle.properties becomes the next development version, which is committed and pushed. The plugin is
+# proposed to N.I.N.A. by hand, for the releases which matter to it: see nina-manifest.yml.
 on:
   workflow_dispatch:
     inputs:
@@ -46,16 +46,6 @@ jobs:
     uses: ./.github/workflows/nina.yml
     with:
       version: ${{ inputs.version }}
-
-  # the plugin of a final release is proposed to N.I.N.A.: a pre-release has the plugin version of the next release
-  nina-manifest:
-    needs: release
-    if: ${{ !contains(inputs.version, '-') }}
-    uses: ./.github/workflows/nina-manifest.yml
-    with:
-      version: ${{ inputs.version }}
-    secrets:
-      NINA_MANIFESTS_TOKEN: ${{ secrets.NINA_MANIFESTS_TOKEN }}
 
   release:
     name: Release

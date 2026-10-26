@@ -247,10 +247,11 @@ JRELEASER_GITHUB_TOKEN=dummy ./gradlew jreleaserFullRelease --dryrun -Pversion=1
 A release also publishes the N.I.N.A. plugin, `asterion-nina-<version>.zip`, built with the Windows executable of
 the same run. N.I.N.A. users get it once its manifest is merged into the plugin repository of N.I.N.A.,
 [isbeorn/nina.plugin.manifests](https://github.com/isbeorn/nina.plugin.manifests), where its maintainers review
-it. After a final release, the `N.I.N.A. plugin manifest` workflow writes that manifest from the published zip,
-with `integrations/nina/New-NinaManifest.ps1`, validates it with the scripts of the plugin repository, which
-also download the zip to check its checksum, and opens the pull request from a fork. Pre-releases aren't
-proposed: their plugin has the version of the next release.
+it. Not every release matters to N.I.N.A. users, so it is proposed by hand: run the `N.I.N.A. plugin manifest`
+workflow (Actions > N.I.N.A. plugin manifest > Run workflow) with the released version, and check
+`pull-request`. It writes the manifest from the published zip, with `integrations/nina/New-NinaManifest.ps1`,
+validates it with the scripts of the plugin repository, which also download the zip to check its checksum, and
+opens the pull request from a fork. Don't propose pre-releases: their plugin has the version of the next release.
 
 Opening the pull request needs, once:
 
@@ -263,8 +264,8 @@ Opening the pull request needs, once:
   can write to all the public repositories of its owner.
 
 Without them, the workflow only validates the manifest, and uploads it as the artifact `nina-manifest` of the
-run, to propose by hand. The workflow can also be run by hand for a released version: it opens the pull request
-only when `pull-request` is checked, so it checks the manifest of a release without proposing it.
+run, to propose by hand. With `pull-request` unchecked, it only checks the manifest of a release, without
+proposing it.
 `New-NinaManifest.ps1` runs locally too, with PowerShell 7:
 
 ```
