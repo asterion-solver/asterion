@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
 
 /**
  * Generates the table of deep sky objects of Asterion from OpenNGC and from the catalogs of
- * Sharpless and Lynds, see README.md.
+ * Sharpless, van den Bergh and Lynds, see README.md.
  *
  * <pre>java asterion-core/src/dso/GenerateDeepSkyObjects.java asterion-core/src/main/resources</pre>
  */
@@ -64,8 +64,9 @@ class GenerateDeepSkyObjects {
     static final int IC = 1;
     static final int OTHER = 2;
     static final int SHARPLESS = 3;
-    static final int LBN = 4;
-    static final int LDN = 5;
+    static final int VDB = 4;
+    static final int LBN = 5;
+    static final int LDN = 6;
 
     /**
      * Common names of objects of Sharpless and Lynds, which these catalogs don't have, and of a
@@ -79,6 +80,12 @@ class GenerateDeepSkyObjects {
             Map.entry("Sh2-261", "Lower's Nebula"), Map.entry("Sh2-264", "Lambda Orionis Ring"), Map.entry("Sh2-276", "Barnard's Loop"),
             Map.entry("Sh2-308", "Dolphin Head Nebula"), Map.entry("LBN 437", "Gecko Nebula"), Map.entry("LBN 777", "Baby Eagle Nebula"),
             Map.entry("LDN 1235", "Shark Nebula"), Map.entry("LDN 1622", "Boogeyman Nebula"));
+
+    /**
+     * The objects of van den Bergh which are objects of a more famous catalog, though their positions,
+     * the ones of their stars, are away from the centers of these objects.
+     */
+    static final Map<String, String> VDB_IDENTIFICATIONS = Map.of("vdB 17", "NGC 1333");
 
     /** A position closer than this to the one of an object of a more famous catalog is the same object, in arcminutes. */
     static final double SAME_POSITION = 5;
@@ -118,6 +125,7 @@ class GenerateDeepSkyObjects {
         var generator = new GenerateDeepSkyObjects();
         generator.openNgc();
         var sharpless = generator.sharpless();
+        var vdb = generator.vandenBergh();
         var lbn = generator.lynds("VII/9", LBN);
         var ldn = generator.lynds("VII/7A", LDN);
         generator.commonNames();
@@ -125,8 +133,8 @@ class GenerateDeepSkyObjects {
         var target = resources.resolve("me/champeau/asterion/catalog/deep-sky-objects.bin");
         Files.createDirectories(target.getParent());
         Files.write(target, bytes);
-        System.out.printf("%d objects, %d bytes; %s of Sharpless, %s of LBN, %s of LDN%n", generator.entries.size(), bytes.length,
-                sharpless, lbn, ldn);
+        System.out.printf("%d objects, %d bytes; %s of Sharpless, %s of van den Bergh, %s of LBN, %s of LDN%n", generator.entries.size(),
+                bytes.length, sharpless, vdb, lbn, ldn);
     }
 
     private void openNgc() throws IOException, InterruptedException {
@@ -201,6 +209,38 @@ class GenerateDeepSkyObjects {
         return rows.size() + " objects, " + merged + " merged";
     }
 
+    /**
+     * The reflection nebulae of van den Bergh (1966): their positions are the ones of the stars which
+     * light them, computed for J2000 by VizieR, and their sizes the largest extents of their
+     * nebulosity around these stars, on the blue or the red plates of the survey.
+     */
+    private String vandenBergh() throws IOException, InterruptedException {
+        var merged = 0;
+        var rows = vizier("VII/21");
+        for (var row : rows) {
+            var entry = new Entry();
+            entry.designation = "vdB " + Integer.parseInt(row.get("VdB"));
+            entry.catalog = VDB;
+            entry.type = "RfN";
+            entry.ra = Double.parseDouble(row.get("_RAJ2000"));
+            entry.dec = Double.parseDouble(row.get("_DEJ2000"));
+            var blue = number(row.get("BRadMax"));
+            var red = number(row.get("RRadMax"));
+            entry.major = 2 * (Float.isNaN(blue) ? red : Float.isNaN(red) ? blue : Math.max(blue, red));
+            entry.minor = entry.major;
+            // OpenNGC doesn't give the numbers of van den Bergh: the same objects are found by their positions
+            var known = VDB_IDENTIFICATIONS.get(entry.designation);
+            var same = known != null ? byName.get(known) : samePosition(entry, BRIGHT_NEBULAE);
+            if (same != null) {
+                merge(entry, same);
+                merged++;
+            } else {
+                add(entry);
+            }
+        }
+        return rows.size() + " objects, " + merged + " merged";
+    }
+
     /** The bright (1965) or dark (1962) nebulae of Lynds. */
     private String lynds(String table, int catalog) throws IOException, InterruptedException {
         var merged = 0;
@@ -259,7 +299,9 @@ class GenerateDeepSkyObjects {
     /**
      * The object of a more famous catalog which is the same as an object, by their positions and
      * sizes, or null: the closest one, relative to their sizes. The catalogs list the parts of
-     * complexes separately, which are not merged with each other.
+     * complexes separately, which are not merged with each other. The sizes of van den Bergh are the
+     * reach of the nebulosity around a star rather than the extent of an object: their objects are the
+     * same as others only at the same center.
      */
     private Entry samePosition(Entry entry, Set<String> types) {
         Entry best = null;
@@ -276,7 +318,8 @@ class GenerateDeepSkyObjects {
             var reach = Math.max(SAME_POSITION, SAME_EXTENT * largest);
             var sameCenter = distance <= Math.max(SAME_POSITION, Math.min(SAME_CENTER_MAX, SAME_CENTER * own));
             // sizes which aren't known aren't similar: the object can only be the one at the same center
-            var similarSize = own > 0 && listed > 0 && own / listed >= 1 / 3.0 && own / listed <= 3;
+            var comparable = entry.catalog != VDB && other.catalog != VDB && own > 0 && listed > 0;
+            var similarSize = comparable && own / listed >= 1 / 3.0 && own / listed <= 3;
             if (!sameCenter && !(distance <= reach && similarSize)) {
                 continue;
             }

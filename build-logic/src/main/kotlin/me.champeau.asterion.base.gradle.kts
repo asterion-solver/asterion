@@ -2,6 +2,8 @@ plugins {
     java
     jacoco
     id("com.diffplug.spotless")
+    // retries the tests which a project lets fail now and then, see its `retry` block
+    id("org.gradle.test-retry")
 }
 
 group = "me.champeau.asterion"

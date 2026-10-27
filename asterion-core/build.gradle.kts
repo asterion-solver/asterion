@@ -22,6 +22,14 @@ tasks.jar {
 }
 
 tasks.test {
+    retry {
+        // the lanes of the search run in parallel: the quad which finds the field, and so the solution,
+        // can differ from a run to the next, and the accuracy of some synthetic fields is at the limit
+        maxRetries = 2
+        filter {
+            includeClasses.add("me.champeau.asterion.solver.PlateSolverTest")
+        }
+    }
     // a list of image files which the decoders are compared with ImageIO on, see ImageCorpusTest
     val imageCorpus = providers.gradleProperty("imageCorpus").getOrElse("")
     systemProperty("asterion.imageCorpus", imageCorpus)

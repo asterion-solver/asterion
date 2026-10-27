@@ -203,9 +203,17 @@ paths:
       description: |
         The image reduced to 800 pixels wide and stretched, as an 8-bit grayscale PNG file: what
         the page shows for the images which browsers can't display, such as FITS files. It's made the
-        first time it's asked for.
+        first time it's asked for. With `full=true`, the picture has the size of the image, for the
+        annotated images which the page saves, and is made each time: the raw frames of color sensors
+        are binned 2x2, which shows their pixels without the pattern of their filters.
       parameters:
         - $ref: "#/components/parameters/Id"
+        - name: full
+          in: query
+          description: "`true` for a picture of the size of the image, rather than 800 pixels wide."
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: The thumbnail.
