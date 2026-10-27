@@ -2,9 +2,10 @@ name: N.I.N.A. plugin manifest
 
 # Proposes the manifest of a release of the N.I.N.A. plugin to the plugin repository of N.I.N.A.,
 # isbeorn/nina.plugin.manifests: the manifest is written from the plugin zip of the GitHub release, by
-# integrations/nina/New-NinaManifest.ps1, validated by the scripts of that repository, then proposed
-# with a pull request from a fork of it. It is run by hand, for the releases which matter to N.I.N.A.: not every
-# release changes the plugin, or the executable which it bundles, in a way that N.I.N.A. users need.
+# integrations/nina/New-NinaManifest.ps1, replaces the manifest of the previous release, is validated by the
+# scripts of that repository, then proposed with a pull request from a fork of it. It is run by hand, for the
+# releases which matter to N.I.N.A.: not every release changes the plugin, or the executable which it bundles,
+# in a way that N.I.N.A. users need.
 #
 # The pull request needs the repository variable NINA_MANIFESTS_FORK, the fork, such as owner/nina.plugin.manifests,
 # and the secret NINA_MANIFESTS_TOKEN, a token of its owner. A classic token with the public_repo scope pushes the
@@ -51,7 +52,16 @@ jobs:
           # the whole history: the branch of the manifest is pushed to the fork, which may lack the latest commits
           git clone --quiet https://github.com/isbeorn/nina.plugin.manifests.git "$RUNNER_TEMP/manifests"
           cd "$RUNNER_TEMP/manifests"
-          mkdir -p "$(dirname "$MANIFEST")"
+          folder="$(dirname "$MANIFEST")"
+          # the plugin has a single manifest, updated with each release: it replaces the previous one
+          if [ -n "$(git ls-files "$folder")" ]; then
+            title="Update Asterion Solver plugin to $VERSION.0"
+            git rm --quiet "$folder"/*.json
+          else
+            title="Add Asterion Solver plugin $VERSION.0"
+          fi
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          mkdir -p "$folder"
           cp "$RUNNER_TEMP/manifest.json" "$MANIFEST"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -61,11 +71,10 @@ jobs:
             echo "published=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git commit --quiet -F - <<EOF
-          Add Asterion Solver plugin $VERSION.0
-
-          The manifest of the release https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION
-          EOF
+          git commit --quiet -m "Automatically generated manifest for release https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
+          # the script validates the added and modified manifests of the last commit: without rename detection,
+          # the replaced manifest is a deleted file and the new one an added file, rather than a renamed file
+          git config diff.renames false
           npm install --silent --no-audit --no-fund
           node validate-latest-manifest.js
       - uses: actions/upload-artifact@v4
@@ -78,6 +87,7 @@ jobs:
         env:
           FORK: ${{ vars.NINA_MANIFESTS_FORK }}
           GH_TOKEN: ${{ secrets.NINA_MANIFESTS_TOKEN }}
+          TITLE: ${{ steps.validate.outputs.title }}
         run: |
           if [ -z "$FORK" ] || [ -z "$GH_TOKEN" ]; then
             echo "::warning::NINA_MANIFESTS_FORK or NINA_MANIFESTS_TOKEN isn't configured: the manifest is an artifact of the run, to propose by hand"
@@ -92,7 +102,7 @@ jobs:
           if [ "$open" -gt 0 ]; then
             echo "The pull request of $branch is open already"
           elif ! gh pr create --repo isbeorn/nina.plugin.manifests --base main --head "${FORK%%/*}:$branch" \
-                 --title "Add Asterion Solver plugin $VERSION.0" \
+                 --title "$TITLE" \
                  --body "The manifest of the release https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION of Asterion Solver."; then
             # a fine-grained token can't open pull requests in repositories of other owners
             echo "::notice::The branch $branch is pushed to $FORK: open the pull request at $link"

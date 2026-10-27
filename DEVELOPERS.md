@@ -250,8 +250,10 @@ the same run. N.I.N.A. users get it once its manifest is merged into the plugin 
 it. Not every release matters to N.I.N.A. users, so it is proposed by hand: run the `N.I.N.A. plugin manifest`
 workflow (Actions > N.I.N.A. plugin manifest > Run workflow) with the released version, and check
 `pull-request`. It writes the manifest from the published zip, with `integrations/nina/New-NinaManifest.ps1`,
-validates it with the scripts of the plugin repository, which also download the zip to check its checksum, and
-opens the pull request from a fork. Don't propose pre-releases: their plugin has the version of the next release.
+in place of the manifest of the previous release, since the plugin repository keeps a single manifest of the
+plugin. It validates it with the scripts of the plugin repository, which also download the zip to check its
+checksum, and opens the pull request from a fork. Don't propose pre-releases: their plugin has the version of the
+next release.
 
 Opening the pull request needs, once:
 
