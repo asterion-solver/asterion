@@ -10,6 +10,7 @@ dependencies {
     implementation(libs.spotless.plugin)
     // microbenchmarks of asterion-core: on the shared classpath, like the other plugins
     implementation(libs.jmh.plugin)
+    implementation(libs.test.retry.plugin)
 }
 
 tasks.withType<KotlinJvmCompile>().configureEach {
