@@ -114,6 +114,11 @@ public final class WebServer implements AutoCloseable {
         return web;
     }
 
+    /** The solved images which are kept, for downloads and thumbnails. */
+    SolvedImages solvedImages() {
+        return solved;
+    }
+
     /**
      * The operations of the API, by their paths, which its definition describes: see
      * {@code web/openapi.yaml}, which is served at {@code /api/openapi.yaml}.
@@ -332,32 +337,54 @@ public final class WebServer implements AutoCloseable {
 
     /**
      * The thumbnail of a solved image, for the images which browsers can't display: it is made the
-     * first time it's asked for, after the image was solved, and is never part of a solution.
+     * first time it's asked for, after the image was solved, and is never part of a solution. With
+     * {@code full=true}, the picture has the size of the image, for the annotated images which the
+     * page saves: it's made each time, as it's rarely asked for, and large.
      */
     private void thumbnail(HttpExchange exchange) throws IOException {
         expect(exchange, "GET");
         var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
         var image = solved.get(request.parameter("id"));
-        var file = image.thumbnail();
+        var full = "true".equals(request.parameter("full"));
         var bottomUp = Thumbnail.bottomUp(image.file(), image.name());
-        if (!Files.exists(file)) {
-            byte[] png;
-            try {
-                png = Thumbnail.png(ImageLoader.load(image.file(), 0).image(), THUMBNAIL_WIDTH, bottomUp);
-            } catch (IOException e) {
-                throw new IllegalArgumentException(String.valueOf(e.getMessage()).replace(image.file().toString(), image.name()), e);
-            }
-            // written aside, then moved: a request at the same time never reads half a file
-            var temp = solved.createTempFile(".png");
-            Files.write(temp, png);
-            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        }
         exchange.getResponseHeaders().set("Content-Type", "image/png");
         exchange.getResponseHeaders().set("Cache-Control", "private, max-age=3600");
         // the thumbnail is displayed as it is: this tells where the first row of the image is
         exchange.getResponseHeaders().set("Asterion-Row-Order", bottomUp ? "bottom-up" : "top-down");
+        if (full) {
+            var png = picture(image, 0, bottomUp);
+            exchange.sendResponseHeaders(200, png.length);
+            exchange.getResponseBody().write(png);
+            return;
+        }
+        var file = image.thumbnail();
+        if (!Files.exists(file)) {
+            // written aside, then moved: a request at the same time never reads half a file
+            var temp = solved.createTempFile(".png");
+            Files.write(temp, picture(image, THUMBNAIL_WIDTH, bottomUp));
+            Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
         exchange.sendResponseHeaders(200, Files.size(file));
         Files.copy(file, exchange.getResponseBody());
+    }
+
+    /**
+     * The picture of a solved image, as a PNG file.
+     *
+     * @param maxWidth the width of the picture, at most, or 0 for the size of the image: the raw
+     * frames of color sensors are binned 2x2, which shows their pixels without the pattern of their
+     * filters, but large images aren't, unlike the images which are solved
+     */
+    private static byte[] picture(SolvedImages.Image image, int maxWidth, boolean bottomUp) {
+        try {
+            var loaded = ImageLoader.load(image.file(), 0);
+            if (maxWidth == 0 && !loaded.hints().bayer() && loaded.image().width() < loaded.image().sourceWidth()) {
+                loaded = ImageLoader.load(image.file(), 1);
+            }
+            return Thumbnail.png(loaded.image(), maxWidth == 0 ? loaded.image().width() : maxWidth, bottomUp);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(String.valueOf(e.getMessage()).replace(image.file().toString(), image.name()), e);
+        }
     }
 
     private static void attachment(HttpExchange exchange, String name, String type, long length) throws IOException {

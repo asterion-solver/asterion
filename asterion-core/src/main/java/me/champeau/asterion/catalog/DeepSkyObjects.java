@@ -27,9 +27,10 @@ import java.util.List;
 
 /**
  * The deep sky objects of the Messier, NGC and IC catalogs, of the catalogs of HII regions of
- * Sharpless and of bright and dark nebulae of Lynds, and a few others: galaxies, clusters and
- * nebulae, with their size, to tell which ones an image contains. An object which several catalogs
- * list appears once, with the designation of the most famous one, and the others as aliases. The
+ * Sharpless, of reflection nebulae of van den Bergh and of bright and dark nebulae of Lynds, and a
+ * few others: galaxies, clusters and nebulae, with their size, to tell which ones an image
+ * contains. An object which several catalogs list appears once, with the designation of the most
+ * famous one, and the others as aliases. The
  * table comes from OpenNGC and VizieR, see the credits in {@code third-party/openngc.md} and
  * {@code third-party/vizier-nebulae.md}.
  */
@@ -76,6 +77,8 @@ public final class DeepSkyObjects {
         OTHER,
         /** The HII regions of Sharpless (1959). */
         SHARPLESS,
+        /** The reflection nebulae of van den Bergh (1966). */
+        VDB,
         /** The bright nebulae of Lynds (1965). */
         LBN,
         /** The dark nebulae of Lynds (1962). */

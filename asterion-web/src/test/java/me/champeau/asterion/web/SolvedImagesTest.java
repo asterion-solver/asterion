@@ -37,7 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SolvedImagesTest {
-    private static final Solution SOLUTION = new Solution(new Wcs(10, 10, 1, 0.5, new double[]{1e-5, 0, 0, 1e-5}),
+    /** A solution, whatever the image: the tests of kept images don't look at it. */
+    static final Solution SOLUTION = new Solution(new Wcs(10, 10, 1, 0.5, new double[]{1e-5, 0, 0, 1e-5}),
             57.3, 28.6, 2, 0, false, 0.01, 0.01, 10, 0.5, 40, "test", List.of());
 
     @TempDir

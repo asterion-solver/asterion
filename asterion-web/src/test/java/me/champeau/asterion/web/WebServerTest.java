@@ -25,6 +25,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -36,6 +38,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.TreeSet;
+import javax.imageio.ImageIO;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,7 +62,11 @@ class WebServerTest {
     }
 
     private HttpResponse<String> get(String path) throws Exception {
-        return client.send(HttpRequest.newBuilder(server.uri().resolve(path)).build(), HttpResponse.BodyHandlers.ofString());
+        return get(path, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private <T> HttpResponse<T> get(String path, HttpResponse.BodyHandler<T> body) throws Exception {
+        return client.send(HttpRequest.newBuilder(server.uri().resolve(path)).build(), body);
     }
 
     private HttpResponse<String> post(String path, byte[] body) throws Exception {
@@ -210,6 +217,34 @@ class WebServerTest {
         var unknown = post("/api/install?name=hipparcos", new byte[0]);
         assertEquals(400, unknown.statusCode());
         assertEquals("{\"error\":\"Unknown catalog hipparcos\"}", unknown.body());
+    }
+
+    @Test
+    void servesPicturesOfSolvedImages(@TempDir Path uploads) throws Exception {
+        // wider than thumbnails, with some noise to stretch
+        var random = new SplittableRandom(1);
+        var picture = new BufferedImage(1200, 900, BufferedImage.TYPE_BYTE_GRAY);
+        for (var y = 0; y < picture.getHeight(); y++) {
+            for (var x = 0; x < picture.getWidth(); x++) {
+                picture.getRaster().setSample(x, y, 0, 20 + random.nextInt(40));
+            }
+        }
+        var upload = uploads.resolve("upload.png");
+        ImageIO.write(picture, "png", upload.toFile());
+        var id = server.solvedImages().keep(upload, "image.png", SolvedImagesTest.SOLUTION);
+
+        var thumbnail = get("/api/thumbnail?id=" + id, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, thumbnail.statusCode());
+        assertEquals("top-down", thumbnail.headers().firstValue("Asterion-Row-Order").orElseThrow());
+        var small = ImageIO.read(new ByteArrayInputStream(thumbnail.body()));
+        assertEquals(800, small.getWidth());
+        assertEquals(600, small.getHeight());
+
+        // the picture which the page annotates at the size of the image
+        var response = get("/api/thumbnail?id=" + id + "&full=true", HttpResponse.BodyHandlers.ofByteArray());
+        var full = ImageIO.read(new ByteArrayInputStream(response.body()));
+        assertEquals(1200, full.getWidth());
+        assertEquals(900, full.getHeight());
     }
 
     @Test

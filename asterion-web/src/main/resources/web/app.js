@@ -290,20 +290,48 @@ async function thumbnailView(file, data) {
         // hovering shows the overlay, and clicking keeps it, which touch screens need
         frame.addEventListener('click', () => frame.classList.toggle('pinned'));
         figure.append(element('figcaption', 'Hover over the image, or click it, to show its coordinates, its orientation and its objects'));
+        figure.append(annotatedImageView(file, data));
     }
     return figure;
+}
+
+/** The button which saves the image at its size, with the overlay of the thumbnail. */
+function annotatedImageView(file, data) {
+    const view = element('div', undefined, 'annotated');
+    const button = element('button', 'Save annotated image (.jpg)');
+    button.title = 'The image at its size, with its coordinates, its orientation and its objects';
+    const failure = element('div', 'The browser couldn\'t make the annotated image: it may be too large for it.', 'muted');
+    failure.hidden = true;
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        failure.hidden = true;
+        try {
+            const blob = await annotatedImage(file, data);
+            if (blob) {
+                save(blob, baseName(data.image) + '.annotated.jpg');
+            } else {
+                failure.hidden = false;
+            }
+        } finally {
+            button.disabled = false;
+        }
+    });
+    view.append(button, failure);
+    return view;
 }
 
 /**
  * The image as decoded by the browser, when it can: JPEG, PNG... Browsers turn photos as their
  * EXIF tags say, which the solver doesn't: a thumbnail which doesn't have the shape of the solved
  * image isn't the image the solution describes, and the one of the server is used instead.
+ *
+ * @param full true for the image at its size, rather than a thumbnail
  */
-async function browserPicture(file, data) {
+async function browserPicture(file, data, full = false) {
     if (!file.type.startsWith('image/') || file.size > THUMBNAIL_MAX_BYTES) return null;
     let bitmap;
     try {
-        bitmap = await createImageBitmap(file, {resizeWidth: THUMBNAIL_WIDTH, resizeQuality: 'medium'});
+        bitmap = await createImageBitmap(file, full ? {} : {resizeWidth: THUMBNAIL_WIDTH, resizeQuality: 'medium'});
     } catch {
         return null;
     }
@@ -318,12 +346,14 @@ async function browserPicture(file, data) {
  * The image as rendered by the server, which keeps the solved images: FITS files, TIFF files...
  * The server displays the first row of FITS files at the bottom, unless their header says
  * otherwise, and tells it.
+ *
+ * @param full true for the image at its size, rather than a thumbnail
  */
-async function serverPicture(data) {
+async function serverPicture(data, full = false) {
     const id = data.download && data.download.id;
     if (!id) return null;
     try {
-        const response = await fetch(`api/thumbnail?id=${encodeURIComponent(id)}`);
+        const response = await fetch(`api/thumbnail?id=${encodeURIComponent(id)}${full ? '&full=true' : ''}`);
         if (!response.ok) return null;
         const bottomUp = response.headers.get('Asterion-Row-Order') === 'bottom-up';
         const bitmap = await createImageBitmap(await response.blob());
@@ -331,6 +361,55 @@ async function serverPicture(data) {
     } catch {
         return null;
     }
+}
+
+/**
+ * The image at its size with the overlay of its solution, to save, as a JPEG file. The overlay is
+ * laid out for a thumbnail, and scaled with the image, so that the saved image looks like the page.
+ *
+ * @return a promise of the file, or of null when the image can't be displayed, or is too large
+ * for the browser
+ */
+async function annotatedImage(file, data) {
+    const picture = await browserPicture(file, data, true) || await serverPicture(data, true);
+    if (!picture) return null;
+    const {bitmap, bottomUp} = picture;
+    const canvas = element('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const svg = overlay(data, THUMBNAIL_WIDTH, canvas.height * THUMBNAIL_WIDTH / canvas.width, bottomUp);
+    svg.setAttribute('width', canvas.width);
+    svg.setAttribute('height', canvas.height);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type: 'image/svg+xml'}));
+    try {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    } catch {
+        return null;
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+    // null when the canvas is larger than what the browser can encode
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+}
+
+/** The name of an image without its extension, for the names of the files made from it. */
+function baseName(image) {
+    return image.replace(/\.[^.]*$/, '');
+}
+
+/** Saves a file made by the page, as a download. */
+function save(blob, name) {
+    const a = element('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 /**
@@ -385,9 +464,35 @@ function wcsProjection(wcs) {
 const LABELS_INSIDE = 80;
 /** The objects of the catalogs of Lynds which an overlay shows, at most. */
 const MAX_LYNDS_OBJECTS = 6;
+/** The objects which the whole image is in that an overlay names, at most: complexes are listed as nested parts. */
+const MAX_ENCLOSING_OBJECTS = 3;
+
+/** The width of the label of an object, about: its font is 15 pixels high. */
+function labelWidth(text) {
+    return text.length * 8.5;
+}
+
+/** Tells if two boxes, [left, top, right, bottom], overlap. */
+function intersects(p, q) {
+    return p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
+}
 
 /** The steps of the grid of coordinates, in degrees. */
 const GRID_STEPS = [1, 2, 5, 10, 15, 20, 30].map(m => m / 60).concat([1, 2, 5, 10, 15, 20, 30]);
+
+/**
+ * The style of what overlays draw. It's in the overlays, rather than in the style sheet of the
+ * page, which doesn't apply to the overlays of the saved images, drawn as images.
+ */
+const OVERLAY_STYLE = `
+.overlay { font: 600 15px system-ui, sans-serif; }
+.overlay .grid { fill: none; stroke: rgba(130, 180, 255, 0.55); stroke-width: 1; }
+.overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 3px; stroke-linejoin: round; }
+.overlay .grid-label { fill: rgb(170, 205, 255); font-weight: 500; font-size: 13px; }
+.overlay .object { fill: none; stroke: rgb(255, 200, 90); stroke-width: 1.5; }
+.overlay .object-label { fill: rgb(255, 210, 120); }
+.overlay .compass { stroke: rgb(240, 240, 240); stroke-width: 2; }
+.overlay .compass-label { fill: rgb(240, 240, 240); text-anchor: middle; }`;
 
 /**
  * The overlay of a thumbnail, in the pixels of the thumbnail: the grid of coordinates, a compass
@@ -405,6 +510,7 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
         svg.append(e);
         return e;
     };
+    add('style', {}, OVERLAY_STYLE);
     const projection = wcsProjection(data.wcs);
     const width = Math.round(data.fieldWidth * 3600 / data.scale);
     const height = Math.round(data.fieldHeight * 3600 / data.scale);
@@ -460,7 +566,9 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
     const samples = 96;
     // the corner of the compass, which the labels leave free
     const compass = [thumbWidth - 120, 0, thumbWidth, 120];
-    const clear = box => !(box[0] < compass[2] && compass[0] < box[2] && box[1] < compass[3] && compass[1] < box[3]);
+    const clear = box => !intersects(box, compass);
+    // the boxes of the labels of the grid, which the labels of objects on the edges avoid
+    const gridLabels = [];
     // the label of a line, where it crosses an edge of the image: declinations on the left,
     // right ascensions at the bottom, or else on the opposite edge
     const label = (points, edges, text) => {
@@ -484,8 +592,10 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
             bottom: {x: along, y: thumbHeight - 6},
             top: {x: along, y: 16},
         }[edge];
-        if (clear([at.x, at.y - 12, at.x + width, at.y + 2])) {
+        const box = [at.x, at.y - 12, at.x + width, at.y + 2];
+        if (clear(box)) {
             add('text', {...at, class: 'grid-label'}, text);
+            gridLabels.push(box);
         }
     };
     const lines = [];
@@ -506,11 +616,48 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
     // and position angles, with their labels. An object is shown only where its label has room,
     // covering neither other labels nor markers: an outline without a name is noise
     const taken = [compass];
-    const overlaps = box => taken.some(t => box[0] < t[2] && t[0] < box[2] && box[1] < t[3] && t[1] < box[3]);
+    const overlaps = box => taken.some(t => intersects(box, t));
     const free = box => box[0] >= 0 && box[2] <= thumbWidth && box[1] >= 0 && box[3] <= thumbHeight && !overlaps(box);
     let lynds = 0;
+    let enclosing = 0;
     // the large outlines which are drawn: centers and radii
     const outlines = [];
+    // tells if the image is in the ellipse of an object, from the positions of its corners on the sky
+    const encloses = (o, a, b, angle) => a > 0 && [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]].every(([x, y]) => {
+        const [ra, dec] = projection.toSky(x, y);
+        const east = ((ra - o.ra + 540) % 360 - 180) * Math.cos(o.dec * Math.PI / 180);
+        const north = dec - o.dec;
+        // in the axes of the ellipse: the major one is at the position angle, east of north
+        const u = north * Math.cos(angle) + east * Math.sin(angle);
+        const v = east * Math.cos(angle) - north * Math.sin(angle);
+        return (u / a) ** 2 + (v / b) ** 2 <= 1;
+    });
+    // the label of an object which the image is in, on the edge which faces its center, with an
+    // arrow towards it: where the line from the center of the image to the one of the object leaves
+    // the image, less the size of the label, or else further along that edge, clear of the labels of
+    // the grid. Returns false when the edge has no room
+    const edgeLabel = (name, target) => {
+        const [cx, cy] = [thumbWidth / 2, thumbHeight / 2];
+        const [dx, dy] = [target[0] - cx, target[1] - cy];
+        const arrow = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'][(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+        const text = `${name} ${arrow}`;
+        const [w, h, margin] = [labelWidth(text), 17, 6];
+        const tx = Math.max(0, cx - margin - w / 2) / Math.abs(dx || 1e-9);
+        const ty = Math.max(0, cy - margin - h / 2) / Math.abs(dy || 1e-9);
+        const t = Math.min(tx, ty);
+        const [x, y] = [cx + dx * t, cy + dy * t];
+        // along the top or the bottom edge, or along a side
+        const [sx, sy] = ty <= tx ? [1, 0] : [0, 1];
+        for (const shift of [0, -1, 1, -2, 2, -3, 3].map(k => k * 40)) {
+            const box = [x + sx * shift - w / 2, y + sy * shift - h / 2, x + sx * shift + w / 2, y + sy * shift + h / 2];
+            if (free(box) && !gridLabels.some(g => intersects(box, g))) {
+                add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, text);
+                taken.push(box);
+                return true;
+            }
+        }
+        return false;
+    };
     for (const o of (data.objects || []).slice(0, 60)) {
         // the catalogs of Lynds cut complexes into many pieces, with generous extents: a few are enough
         const fromLynds = /^L[BD]N /.test(o.name);
@@ -519,8 +666,7 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
         // distortion are approximations, which drift on the edges of very wide fields
         const center = toThumb([o.x, o.y]);
         const projected = project(o.ra, o.dec);
-        if (!inside(center) || !projected) continue;
-        const shift = p => p && [p[0] + center[0] - projected[0], p[1] + center[1] - projected[1]];
+        if (!projected) continue;
         // an object whose orientation isn't known is a circle of the same area: an ellipse would have to
         // point somewhere, and a circle of its major axis would be much larger than the object
         const oriented = o.angle !== undefined && o.angle !== null;
@@ -529,6 +675,18 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
         const a = oriented ? major : Math.sqrt(major * minor);
         const b = oriented ? minor : a;
         const angle = oriented ? o.angle * Math.PI / 180 : 0;
+        if (!inside(center)) {
+            // an object which the whole image is in, such as the nebula of a close-up: none of its outline
+            // is in the image, and its label is on the edge which faces its center
+            if (enclosing < MAX_ENCLOSING_OBJECTS && encloses(o, a, b, angle) && edgeLabel(o.label, center)) {
+                enclosing++;
+                if (fromLynds) {
+                    lynds++;
+                }
+            }
+            continue;
+        }
+        const shift = p => p && [p[0] + center[0] - projected[0], p[1] + center[1] - projected[1]];
         const outline = [];
         for (let i = 0; i <= 48 && a > 0; i++) {
             const t = 2 * Math.PI * i / 48;
@@ -547,7 +705,7 @@ function overlay(data, thumbWidth, thumbHeight, bottomUp) {
         if (radius < LABELS_INSIDE && overlaps(marker)) continue;
         // inside the outlines which are large enough, as a label next to a large outline is next to
         // other objects too; next to the marker otherwise
-        const width = o.label.length * 8.5;
+        const width = labelWidth(o.label);
         const at = (x, y) => [x, y - 13, x + width, y + 4];
         const candidates = radius >= LABELS_INSIDE
             ? [at(center[0] - width / 2, center[1] + 5), at(center[0] - width / 2, center[1] + 24), at(center[0] - width / 2, center[1] - 14)]
@@ -695,13 +853,7 @@ function downloadsView(data) {
     }
     const json = element('button', 'Result (.json)');
     json.title = 'This result, as the JSON output of the command line tool';
-    json.addEventListener('click', () => {
-        const a = element('a');
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}));
-        a.download = data.image.replace(/\.[^.]*$/, '') + '.json';
-        a.click();
-        URL.revokeObjectURL(a.href);
-    });
+    json.addEventListener('click', () => save(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}), baseName(data.image) + '.json'));
     view.append(json);
     if (download.id && !download.fits) {
         view.append(element('div', 'The image isn\'t a FITS file: its solution can be downloaded as a FITS header.', 'muted'));

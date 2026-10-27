@@ -317,8 +317,8 @@ Apache License, version 2.0.
 This software is based in part on the work of the Independent JPEG Group: its JPEG decoder reproduces parts of
 the IJG JPEG library, release 6b, see [third-party/ijg-libjpeg.md](third-party/ijg-libjpeg.md). The deep sky objects
 it names come from [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC BY-SA 4.0), see
-[third-party/openngc.md](third-party/openngc.md), and from the catalogs of nebulae of Sharpless and Lynds, retrieved
-from VizieR, see [third-party/vizier-nebulae.md](third-party/vizier-nebulae.md).
+[third-party/openngc.md](third-party/openngc.md), and from the catalogs of nebulae of Sharpless, van den Bergh and
+Lynds, retrieved from VizieR, see [third-party/vizier-nebulae.md](third-party/vizier-nebulae.md).
 
 This software uses data from the Tycho-2 catalogue (Høg et al., 2000) and from the European Space Agency
 mission Gaia, processed by the Gaia Data Processing and Analysis Consortium.

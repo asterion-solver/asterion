@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DeepSkyObjectsTest {
@@ -54,9 +55,10 @@ class DeepSkyObjectsTest {
     @Test
     void listsAnObjectOnceWithTheDesignationOfTheMostFamousCatalog() {
         var all = DeepSkyObjects.all();
-        // the catalogs of Sharpless and Lynds, merged with OpenNGC
+        // the catalogs of Sharpless, van den Bergh and Lynds, merged with OpenNGC
         assertTrue(all.stream().filter(o -> o.catalog() == DeepSkyObjects.Catalog.SHARPLESS).count() > 250);
-        assertTrue(all.stream().filter(o -> o.catalog() == DeepSkyObjects.Catalog.LBN).count() > 700);
+        assertTrue(all.stream().filter(o -> o.catalog() == DeepSkyObjects.Catalog.VDB).count() > 100);
+        assertTrue(all.stream().filter(o -> o.catalog() == DeepSkyObjects.Catalog.LBN).count() > 650);
         assertTrue(all.stream().filter(o -> o.catalog() == DeepSkyObjects.Catalog.LDN).count() > 1700);
         // the North America nebula is NGC 7000, Sh2-117 and LBN 373: it's listed once, as NGC 7000
         var northAmerica = named("NGC 7000");
@@ -77,6 +79,14 @@ class DeepSkyObjectsTest {
         assertEquals("LDN 1622 (Boogeyman Nebula)", named("LDN 1622").label());
         assertEquals(DeepSkyObjects.Type.DARK_NEBULA, named("LDN 1622").type());
         assertEquals("IC 1805 (Heart Nebula)", named("IC 1805").label());
+        // the reflection nebulae of van den Bergh are at the positions of their stars: the Iris nebula is
+        // vdB 139, and NGC 1333 vdB 17 though its star is away from its center, but the nebulae of Rigel,
+        // 5° from the center of Barnard's Loop, and of Electra, in the Pleiades, are their own objects
+        assertTrue(named("NGC 7023").aliases().contains("vdB 139"), named("NGC 7023").aliases());
+        assertTrue(named("NGC 1333").aliases().contains("vdB 17"), named("NGC 1333").aliases());
+        assertEquals(DeepSkyObjects.Type.REFLECTION_NEBULA, named("vdB 36").type());
+        assertEquals(DeepSkyObjects.Catalog.VDB, named("vdB 20").catalog());
+        assertFalse(named("Sh2-276").aliases().contains("vdB 36"), named("Sh2-276").aliases());
     }
 
     @Test
