@@ -312,7 +312,8 @@ The solver is also a library, which other programs embed to solve images without
 one: a Java library, and a native library for programs in C, C++, Python and other languages, which solves
 the pixels they have in memory, such as the frames of a camera. See [DEVELOPERS.md](DEVELOPERS.md#using-the-library) for
 the Java library, and [asterion-lib/README.md](asterion-lib/README.md) for the native one, which each release
-publishes as `asterion-library-<version>.zip`: the application doesn't need it.
+publishes as `asterion-library-<version>.zip`: the application doesn't need it. Python programs install it with
+`pip install asterion-solver`, see [its documentation](asterion-lib/src/main/python/README.md).
 
 ## License
 

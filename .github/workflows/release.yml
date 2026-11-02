@@ -2,9 +2,11 @@ name: Release
 
 # Releases a version: the native executables are built on each platform with that version, and the
 # N.I.N.A. plugin with the Windows one, then JReleaser tags the current commit, and publishes a GitHub
-# release with the archives, the plugin, their checksums and a changelog. Finally, the version of
-# gradle.properties becomes the next development version, which is committed and pushed. The plugin is
-# proposed to N.I.N.A. by hand, for the releases which matter to it: see nina-manifest.yml.
+# release with the archives, the plugin, their checksums and a changelog, and the wheels of the Python
+# package are published to PyPI. Finally, the version of gradle.properties becomes the next development
+# version, which is committed and pushed: in a job of its own, so that a release can be published to PyPI
+# again by re-running its failed jobs. The plugin is proposed to N.I.N.A. by hand, for the releases which
+# matter to it: see nina-manifest.yml.
 on:
   workflow_dispatch:
     inputs:
@@ -32,6 +34,11 @@ jobs:
           fi
           if [[ "$VERSION" == *-SNAPSHOT ]]; then
             echo "::error::Snapshot versions can't be released"
+            exit 1
+          fi
+          # the versions of the Python package: 1.0.0-rc.1 is 1.0.0rc1
+          if [[ "$VERSION" == *-* && ! "$VERSION" =~ -(alpha|beta|rc)\.?(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Pre-releases are alpha, beta or rc, such as 1.0.0-rc.1, which the Python package can express"
             exit 1
           fi
 
@@ -87,6 +94,44 @@ jobs:
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew jreleaserFullRelease -Pversion=${{ inputs.version }}
+      - name: JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jreleaser-output
+          path: |
+            build/jreleaser/trace.log
+            build/jreleaser/output.properties
+
+  # The wheels of the Python package, published to PyPI with trusted publishing: PyPI trusts this workflow, with
+  # the pypi environment, to publish asterion-solver, without any secret
+  pypi:
+    name: PyPI
+    needs: release
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/asterion-solver/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  next-version:
+    name: Next development version
+    needs: [ release, pypi ]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Prepare the next development version
         env:
           VERSION: ${{ inputs.version }}
@@ -116,11 +161,3 @@ jobs:
           # commits may have been pushed while the release was built
           git pull --rebase origin "$BRANCH"
           git push origin "HEAD:$BRANCH"
-      - name: JReleaser output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: jreleaser-output
-          path: |
-            build/jreleaser/trace.log
-            build/jreleaser/output.properties

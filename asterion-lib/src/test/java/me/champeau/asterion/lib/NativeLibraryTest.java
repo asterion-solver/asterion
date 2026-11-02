@@ -162,22 +162,39 @@ class NativeLibraryTest {
     }
 
     @Test
-    void solvesFromPython() throws Exception {
+    void thePythonPackageWorksOnceItsWheelIsInstalled() throws Exception {
         var python = WINDOWS ? "python" : "python3";
-        assumeTrue(available(python), "Python isn't installed");
+        // CI tests the package on every platform: elsewhere, where Python can create environments, which some
+        // distributions install apart
+        var environments = available(python, "-c", "import ensurepip, venv");
+        if (System.getenv("CI") != null) {
+            assertTrue(environments, "Python, with venv and ensurepip, isn't installed");
+        }
+        assumeTrue(environments, "Python, with venv and ensurepip, isn't installed");
+        // an environment of its own, where the wheel is installed like pip installs it from PyPI, without the network
+        var environment = directory.resolve("python-environment");
+        run(Map.of(), python, "-m", "venv", environment.toString());
+        var environmentPython = environment.resolve(WINDOWS ? "Scripts/python.exe" : "bin/python").toString();
+        try (var files = Files.list(Path.of(System.getProperty("asterion.wheels")))) {
+            var wheel = files.filter(f -> f.toString().endsWith(".whl")).findFirst().orElseThrow();
+            run(Map.of(), environmentPython, "-m", "pip", "install", "--no-index", "--no-deps", "--disable-pip-version-check",
+                    wheel.toString());
+        }
         var pixels = directory.resolve("pixels-python.raw");
         Files.write(pixels, samples(2));
-        var library = Path.of(System.getProperty("asterion.library"), WINDOWS ? "libasterion.dll"
-                : System.getProperty("os.name").startsWith("Mac") ? "libasterion.dylib" : "libasterion.so");
-        var output = run(python, Path.of(System.getProperty("asterion.python"), "solve.py").toString(), library.toString(),
-                catalogs.toString(), pixels.toString(), String.valueOf(WIDTH), String.valueOf(HEIGHT));
 
-        var lines = output.lines().toList();
-        assertEquals("synthetic", line(lines, "installed: "), output);
-        var solution = fields(line(lines, "solved: "));
-        assertEquals(RA, Double.parseDouble(solution.get("ra")), 1 / 3600.0, output);
-        assertEquals(DEC, Double.parseDouble(solution.get("dec")), 1 / 3600.0, output);
-        assertEquals("synthetic", solution.get("index"), output);
+        var output = run(Map.of(
+                "ASTERION_TEST_CATALOGS", catalogs.toString(),
+                "ASTERION_TEST_PIXELS", pixels.toString(),
+                "ASTERION_TEST_WIDTH", String.valueOf(WIDTH),
+                "ASTERION_TEST_HEIGHT", String.valueOf(HEIGHT),
+                "ASTERION_TEST_RA", String.valueOf(RA),
+                "ASTERION_TEST_DEC", String.valueOf(DEC)),
+                environmentPython, "-m", "unittest", "discover", "--start-directory", System.getProperty("asterion.pythonTests"),
+                "--verbose");
+        // the tests of the package, in the report of this one
+        System.out.println(output);
+        assertTrue(output.contains("\nOK"), output);
     }
 
     @Test
@@ -196,7 +213,16 @@ class NativeLibraryTest {
 
     /** Runs a program which uses the library, which must succeed: its output. */
     private static String run(String... command) throws IOException, InterruptedException {
+        return run(Map.of(), command);
+    }
+
+    /** Runs a program which uses the library, with environment variables, which must succeed: its output. */
+    private static String run(Map<String, String> variables, String... command) throws IOException, InterruptedException {
         var builder = new ProcessBuilder(command).redirectErrorStream(true);
+        builder.environment().putAll(variables);
+        // the Python package is the installed one, with its library
+        builder.environment().remove("PYTHONPATH");
+        builder.environment().remove("ASTERION_LIBRARY");
         if (System.getProperty("os.name").equals("Linux")) {
             // a locale which every Linux has, and isn't the one programs start with: the program fails
             // if creating the isolate sets it
@@ -215,9 +241,10 @@ class NativeLibraryTest {
         return output;
     }
 
-    private static boolean available(String program) {
+    /** Whether a command can run, and succeeds. */
+    private static boolean available(String... command) {
         try {
-            return new ProcessBuilder(program, "--version").redirectErrorStream(true).start().waitFor() == 0;
+            return new ProcessBuilder(command).redirectErrorStream(true).start().waitFor() == 0;
         } catch (IOException e) {
             return false;
         } catch (InterruptedException e) {

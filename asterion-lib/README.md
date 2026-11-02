@@ -173,33 +173,16 @@ graal_tear_down_isolate(thread);
 
 ## From Python
 
-Python calls the library with `ctypes`, which comes with it: the structures of `asterion.h` are declared field by
-field, and checked against the library with `asterion_sizeof`, the way `asterion_check_header` does in C.
+The Python package, `asterion-solver` on PyPI, wraps the library in a Python API, with the library of each platform:
 
-```python
-import ctypes as c
-
-lib = c.CDLL("/path/to/libasterion.so")
-lib.asterion_open.argtypes = [c.c_void_p, c.c_char_p, c.POINTER(c.c_void_p)]
-# ... the other functions, and the structures
-
-isolate, thread = c.c_void_p(), c.c_void_p()
-lib.graal_create_isolate(None, c.byref(isolate), c.byref(thread))
-solver = c.c_void_p()
-lib.asterion_open(thread, None, c.byref(solver))
-options = Options()
-lib.asterion_default_options(thread, c.byref(options))
-solution = Solution()
-# the pixels: a numpy array, for example, of native unsigned 16-bit samples, where the pixels of a row are
-# contiguous; its rows may be apart. FITS files store big-endian samples: np.ascontiguousarray(data, np.uint16)
-# converts them
-status = lib.asterion_solve(thread, solver, image.ctypes.data, 2, image.shape[1], image.shape[0], image.strides[0], 0,
-                            c.byref(options), c.byref(solution), None)
+```
+pip install asterion-solver
 ```
 
-[`solve.py`](https://github.com/asterion-solver/asterion/blob/main/asterion-lib/src/test/python/solve.py) is a complete example, which declares every function and structure it
-uses: it installs a catalog when it's asked to, with a progress callback written in Python, lists the installed
-catalogs, then solves an image and closes its solver.
+See [its documentation](https://github.com/asterion-solver/asterion/tree/main/asterion-lib/src/main/python). It
+calls the library with `ctypes`, which comes with Python: [`_native.py`](https://github.com/asterion-solver/asterion/blob/main/asterion-lib/src/main/python/asterion/_native.py)
+declares the structures and the functions of `asterion.h`, and attaches the threads of the program to the isolate,
+which makes it an example for the other languages which call C functions too.
 
 ## More examples
 
