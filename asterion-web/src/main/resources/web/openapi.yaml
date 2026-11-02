@@ -625,10 +625,9 @@ components:
       type: object
       description: |
         An object of the Messier, NGC and IC catalogs, of OpenNGC, or of the catalogs of nebulae of
-        Sharpless and Lynds. An object which several catalogs list has the designation of the most
-        famous one, and the others as aliases.
-      required: [name, label, designation, commonName, aliases, type, ra, dec, x, y, distance, majorArcmin, minorArcmin, angle,
-                 magnitude]
+        Sharpless, van den Bergh and Lynds. An object which several catalogs list has the designation of the most
+        famous one, and the others as aliases. The fields which aren't known are left out.
+      required: [name, label, designation, type, ra, dec, x, y, distance]
       properties:
         name:
           type: string
@@ -641,12 +640,16 @@ components:
         designation:
           type: string
           example: NGC 224
+        messier:
+          type: integer
+          description: The number in the Messier catalog, for the objects which have one.
+          example: 31
         commonName:
-          type: [string, "null"]
-          description: The common names, separated by commas.
+          type: string
+          description: The common names, separated by commas, for the objects which have some.
         aliases:
-          type: [string, "null"]
-          description: The designations in less famous catalogs, separated by commas.
+          type: string
+          description: The designations in less famous catalogs, separated by commas, for the objects which have some.
           example: Sh2-117, LBN 373
         type:
           type: string
@@ -673,19 +676,19 @@ components:
           format: double
           description: The distance between the object and the center of the image, in degrees.
         majorArcmin:
-          type: [number, "null"]
+          type: number
           format: double
           description: The major axis, in arcminutes.
         minorArcmin:
-          type: [number, "null"]
+          type: number
           format: double
           description: The minor axis, in arcminutes.
         angle:
-          type: [number, "null"]
+          type: number
           format: double
           description: The position angle of the major axis, in degrees east of north.
         magnitude:
-          type: [number, "null"]
+          type: number
           format: double
           description: The visual magnitude, or the blue one.
     Catalogs:

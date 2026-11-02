@@ -15,6 +15,8 @@
  */
 package me.champeau.asterion.cli;
 
+import me.champeau.asterion.solver.SolutionJson;
+
 /** A JSON object written on a single line, field by field. */
 final class Json {
     private final StringBuilder sb = new StringBuilder("{");
@@ -50,24 +52,6 @@ final class Json {
 
     /** Appends a JSON string. */
     static void quote(StringBuilder sb, String s) {
-        sb.append('"');
-        for (var i = 0; i < s.length(); i++) {
-            var c = s.charAt(i);
-            switch (c) {
-                case '"' -> sb.append("\\\"");
-                case '\\' -> sb.append("\\\\");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append("\\u%04x".formatted((int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        sb.append('"');
+        SolutionJson.quote(sb, s);
     }
 }

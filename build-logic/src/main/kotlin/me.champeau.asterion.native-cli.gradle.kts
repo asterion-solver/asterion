@@ -1,9 +1,8 @@
 import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
 
 plugins {
-    id("me.champeau.asterion.base")
+    id("me.champeau.asterion.native-image")
     application
-    id("org.graalvm.buildtools.native")
 }
 
 // the name of the executable of the command line tool: other modules set their own
@@ -15,63 +14,37 @@ application {
 
 // The version of the project, and the name of the executable of the command line tool, are made
 // available to the applications as resources
-val writeVersion = tasks.register("writeVersion") {
-    val version = providers.gradleProperty("version")
+// The name of the executable, which the images read from the resource asterion-executable.txt
+val writeExecutableName = tasks.register("writeExecutableName") {
     val name = executableName
-    val output = layout.buildDirectory.dir("generated/version")
-    inputs.property("version", version)
+    val output = layout.buildDirectory.dir("generated/executable")
     inputs.property("executableName", name)
     outputs.dir(output)
     doLast {
+        // only this file: no other one left by an earlier build
         val directory = output.get().asFile
+        directory.deleteRecursively()
         directory.mkdirs()
-        directory.resolve("asterion-version.txt").writeText(version.get())
         directory.resolve("asterion-executable.txt").writeText(name)
     }
 }
 
 sourceSets {
     main {
-        resources.srcDir(writeVersion.map { it.outputs.files.singleFile })
+        resources.srcDir(writeExecutableName.map { it.outputs.files.singleFile })
     }
 }
 
 graalvmNative {
-    toolchainDetection = false
-    // None of our dependencies needs the shared reachability metadata
-    metadataRepository {
-        enabled = false
-    }
     binaries.named("main") {
         imageName = executableName
-        buildArgs.addAll("--no-fallback", "-H:+UnlockExperimentalVMOptions", "-H:+ReportExceptionStackTraces")
-        // Native Image controls the optimization level of instrumented builds (nativeCompile --pgo-instrument)
-        buildArgs.addAll(pgoInstrument.map { instrumented -> if (instrumented) listOf() else listOf("-O3") })
-        buildArgs.add("-H:IncludeResources=asterion-version.txt")
+        buildArgs.add("--no-fallback")
         buildArgs.add("-H:IncludeResources=asterion-executable.txt")
-        // Portable binaries by default, -PnativeMarch=native to tune for the build machine
-        buildArgs.add(providers.gradleProperty("nativeMarch").map { "-march=$it" }.orElse("-march=compatibility"))
-        // Options to experiment with, separated by spaces: -PnativeExtraArgs="-H:-GenLoopSafepoints --gc=epsilon"
-        buildArgs.addAll(providers.gradleProperty("nativeExtraArgs").map { it.split(" ").filter(String::isNotBlank) }.orElse(listOf()))
     }
 }
 
 // The platform, named the way JReleaser does: linux-x86_64, osx-aarch_64, windows-x86_64...
-val platform = providers.systemProperty("os.name").zip(providers.systemProperty("os.arch")) { name, arch ->
-    val os = name.lowercase().let {
-        when {
-            it.contains("win") -> "windows"
-            it.contains("mac") || it.contains("darwin") -> "osx"
-            else -> "linux"
-        }
-    }
-    val cpu = when (arch.lowercase()) {
-        "amd64", "x86_64", "x64" -> "x86_64"
-        "aarch64", "arm64" -> "aarch_64"
-        else -> arch.lowercase()
-    }
-    "$os-$cpu"
-}
+val platform = providers.nativePlatform()
 
 // The native executable of this module and the notices of its third-party data, which the archive
 // of another module can bundle: see the `bundledExecutables` configuration

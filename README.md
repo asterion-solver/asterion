@@ -308,7 +308,11 @@ See [benchmarks](benchmarks/README.md) for the method.
 
 ## Using the library
 
-The solver is also a Java library, which other programs can embed: see [DEVELOPERS.md](DEVELOPERS.md#using-the-library).
+The solver is also a library, which other programs embed to solve images without starting a process for each
+one: a Java library, and a native library for programs in C, C++, Python and other languages, which solves
+the pixels they have in memory, such as the frames of a camera. See [DEVELOPERS.md](DEVELOPERS.md#using-the-library) for
+the Java library, and [asterion-lib/README.md](asterion-lib/README.md) for the native one, which each release
+publishes as `asterion-library-<version>.zip`: the application doesn't need it.
 
 ## License
 

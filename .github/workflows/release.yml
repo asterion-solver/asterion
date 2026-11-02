@@ -74,6 +74,15 @@ jobs:
         with:
           name: nina-plugin
           path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: library-*
+          path: artifacts
+          merge-multiple: true
+      # the native library is released as a single archive, with a directory per platform: the release
+      # page lists one archive for developers, next to the ones of the executables
+      - name: Package the native library
+        run: ./gradlew :asterion-lib:nativeLibraryBundle -Pversion=${{ inputs.version }}
       - name: Release
         env:
           JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

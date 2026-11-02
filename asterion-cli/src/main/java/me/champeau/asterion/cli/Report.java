@@ -19,6 +19,7 @@ import me.champeau.asterion.catalog.Catalogs;
 import me.champeau.asterion.catalog.DeepSkyObjects;
 import me.champeau.asterion.index.StarIndex;
 import me.champeau.asterion.solver.Solution;
+import me.champeau.asterion.solver.SolutionJson;
 import me.champeau.asterion.solver.SolveResult;
 
 import java.io.IOException;
@@ -69,10 +70,8 @@ final class Report {
     }
 
     /** The deep sky objects of the image, the most prominent first. */
-    static List<DeepSkyObjects.InField> objects(Solution s) {
-        var width = (int) Math.round(s.fieldWidthDeg() * 3600 / s.pixelScale());
-        var height = (int) Math.round(s.fieldHeightDeg() * 3600 / s.pixelScale());
-        return DeepSkyObjects.inField(s.wcs(), width, height);
+    private static List<DeepSkyObjects.InField> objects(Solution s) {
+        return DeepSkyObjects.inField(s.wcs(), s.width(), s.height());
     }
 
     /** The first objects, and how many others there are: "M 31 (Andromeda Galaxy), M 110, M 32, and 4 more". */
@@ -90,88 +89,6 @@ final class Report {
 
     private static String field(double degrees) {
         return degrees >= 1 ? Main.format("%.3f°", degrees) : Main.format("%.2f'", degrees * 60);
-    }
-
-    static String json(Path image, SolveResult result) {
-        var sb = new StringBuilder("{");
-        var stats = result.stats();
-        field(sb, "image", image.toString());
-        field(sb, "solved", result.solved());
-        field(sb, "stars", result.stars().size());
-        field(sb, "fwhmPixels", result.stars().medianFwhm());
-        result.solution().ifPresent(s -> {
-            field(sb, "ra", s.raDeg());
-            field(sb, "dec", s.decDeg());
-            field(sb, "scale", s.pixelScale());
-            result.focalLengthMm().ifPresent(focal -> {
-                field(sb, "focalLength", focal);
-                field(sb, "pixelSize", result.pixelSizeMicrons().orElseThrow());
-            });
-            field(sb, "rotation", s.rotationDeg());
-            field(sb, "flipped", s.flipped());
-            field(sb, "fieldWidth", s.fieldWidthDeg());
-            field(sb, "fieldHeight", s.fieldHeightDeg());
-            field(sb, "fwhmArcsec", result.stars().medianFwhm() * s.pixelScale());
-            field(sb, "matchedStars", s.matchedStars());
-            field(sb, "rmsArcsec", s.rmsArcsec());
-            field(sb, "logOdds", s.logOdds());
-            field(sb, "index", s.indexName());
-            sb.append("\"objects\":[");
-            var objects = objects(s);
-            for (var found : objects) {
-                var o = found.object();
-                sb.append('{');
-                field(sb, "name", o.name());
-                field(sb, "designation", o.designation());
-                if (o.messier() > 0) {
-                    field(sb, "messier", o.messier());
-                }
-                if (!o.commonName().isEmpty()) {
-                    field(sb, "commonName", o.commonName());
-                }
-                if (!o.aliases().isEmpty()) {
-                    field(sb, "aliases", o.aliases());
-                }
-                field(sb, "type", o.type().description());
-                field(sb, "ra", o.raDeg());
-                field(sb, "dec", o.decDeg());
-                field(sb, "x", found.x());
-                field(sb, "y", found.y());
-                field(sb, "distance", found.distanceDeg());
-                if (!Double.isNaN(o.majorArcmin())) {
-                    field(sb, "majorArcmin", o.majorArcmin());
-                }
-                if (!Double.isNaN(o.minorArcmin())) {
-                    field(sb, "minorArcmin", o.minorArcmin());
-                }
-                if (!Double.isNaN(o.angleDeg())) {
-                    field(sb, "angle", o.angleDeg());
-                }
-                if (!Double.isNaN(o.magnitude())) {
-                    field(sb, "magnitude", o.magnitude());
-                }
-                sb.setLength(sb.length() - 1);
-                sb.append("},");
-            }
-            if (!objects.isEmpty()) {
-                sb.setLength(sb.length() - 1);
-            }
-            sb.append("],");
-            sb.append("\"wcs\":{");
-            for (var card : s.wcs().toFitsKeywords().entrySet()) {
-                field(sb, card.getKey(), card.getValue());
-            }
-            sb.setLength(sb.length() - 1);
-            sb.append("},");
-        });
-        sb.append("\"timing\":{");
-        field(sb, "readMillis", stats.loadMillis());
-        field(sb, "detectMillis", stats.detectMillis());
-        field(sb, "solveMillis", stats.solveMillis());
-        field(sb, "totalMillis", stats.totalMillis());
-        sb.setLength(sb.length() - 1);
-        sb.append("}}");
-        return sb.toString();
     }
 
     /**
@@ -225,12 +142,6 @@ final class Report {
     }
 
     private static void field(StringBuilder sb, String name, Object value) {
-        sb.append('"').append(name).append("\":");
-        if (value instanceof String s) {
-            Json.quote(sb, s);
-        } else {
-            sb.append(value);
-        }
-        sb.append(',');
+        SolutionJson.field(sb, name, value);
     }
 }

@@ -176,9 +176,19 @@ public final class StarIndex {
         return windows[(int) (offset >>> WINDOW_BITS)].getFloat((int) (offset & WINDOW_MASK));
     }
 
+    /** Opens an index file, which stays mapped until the index is garbage collected. */
     public static StarIndex open(Path path) throws IOException {
+        return open(path, Arena.ofAuto());
+    }
+
+    /**
+     * Opens an index file in an arena: closing the arena unmaps the file at once, and the index can't
+     * be used anymore. Only the threads of the arena can read the index: a shared arena for an index
+     * which several threads search.
+     */
+    public static StarIndex open(Path path, Arena arena) throws IOException {
         try (var channel = FileChannel.open(path, StandardOpenOption.READ)) {
-            var segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), Arena.ofAuto());
+            var segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(), arena);
             return new StarIndex(path, segment);
         }
     }

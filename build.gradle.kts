@@ -48,10 +48,14 @@ jreleaser {
     checksum {
         individual = false
     }
-    // the N.I.N.A. plugin, built by the release workflow, see .github/workflows/nina.yml
     files {
+        // the N.I.N.A. plugin, built by the release workflow, see .github/workflows/nina.yml
         artifact {
             path = layout.projectDirectory.file("artifacts/$executableName-nina-{{projectVersion}}.zip")
+        }
+        // the native library of every platform, see the nativeLibraryBundle task of asterion-lib
+        artifact {
+            path = layout.projectDirectory.file("artifacts/$executableName-library-{{projectVersion}}.zip")
         }
     }
     distributions {

@@ -24,6 +24,7 @@ import me.champeau.asterion.progress.ProgressListener;
 import me.champeau.asterion.progress.ProgressTracker;
 import me.champeau.asterion.solver.Parity;
 import me.champeau.asterion.solver.PlateSolver;
+import me.champeau.asterion.solver.SolutionJson;
 import me.champeau.asterion.solver.SolveResult;
 import me.champeau.asterion.solver.SolverOptions;
 import picocli.CommandLine;
@@ -318,7 +319,7 @@ public final class Main implements Callable<Integer> {
             return false;
         }
         if (json) {
-            records.add(Report.json(image, result));
+            records.add(SolutionJson.of(image.toString(), result));
         } else {
             Report.print(console::println, image, result, verbose);
         }
