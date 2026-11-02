@@ -20,6 +20,8 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.util.Base64
+import java.util.zip.CRC32
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -93,29 +95,29 @@ abstract class PythonWheel : DefaultTask() {
         val output = destinationDirectory.get().asFile
         output.listFiles()?.forEach { it.delete() }
         val wheel = File(output, "$name-$version-$tag.whl")
-        val record = StringBuilder()
-        ZipOutputStream(wheel.outputStream().buffered()).use { zip ->
-            fun add(path: String, content: ByteArray) {
-                zip.putNextEntry(ZipEntry(path).apply { timeLocal = FIXED_TIME })
-                zip.write(content)
-                zip.closeEntry()
-                val digest = MessageDigest.getInstance("SHA-256").digest(content)
-                record.append(path).append(",sha256=").append(Base64.getUrlEncoder().withoutPadding().encodeToString(digest))
-                    .append(',').append(content.size).append('\n')
-            }
-            val packageRoot = packageDirectory.get().asFile
-            packageRoot.walkTopDown().filter { it.isFile && "__pycache__" !in it.path }.sortedBy { it.path }.forEach {
-                add(packageRoot.name + "/" + it.relativeTo(packageRoot).invariantSeparatorsPath, it.readBytes())
-            }
-            libraries.files.sortedBy { it.name }.forEach { add(packageRoot.name + "/" + it.name, it.readBytes()) }
-            add("$distInfo/METADATA", metadata(version).toByteArray())
-            add("$distInfo/WHEEL", "Wheel-Version: 1.0\nGenerator: asterion-build\nRoot-Is-Purelib: false\nTag: $tag\n".toByteArray())
-            licenses().forEach { (path, file) -> add("$distInfo/licenses/$path", file.readBytes()) }
-            zip.putNextEntry(ZipEntry("$distInfo/RECORD").apply { timeLocal = FIXED_TIME })
-            zip.write(record.append("$distInfo/RECORD,,\n").toString().toByteArray())
-            zip.closeEntry()
+        val entries = LinkedHashMap<String, ByteArray>()
+        val packageRoot = packageDirectory.get().asFile
+        packageRoot.walkTopDown().filter { it.isFile && "__pycache__" !in it.path }.sortedBy { it.path }.forEach {
+            entries[packageRoot.name + "/" + it.relativeTo(packageRoot).invariantSeparatorsPath] = it.readBytes()
         }
+        libraries.files.sortedBy { it.name }.forEach { entries[packageRoot.name + "/" + it.name] = it.readBytes() }
+        entries["$distInfo/METADATA"] = metadata(version).toByteArray()
+        entries["$distInfo/WHEEL"] = "Wheel-Version: 1.0\nGenerator: asterion-build\nRoot-Is-Purelib: false\nTag: $tag\n".toByteArray()
+        licenses().forEach { (path, file) -> entries["$distInfo/licenses/$path"] = file.readBytes() }
+        // the hashes of the other entries, last
+        entries["$distInfo/RECORD"] = record(entries, "$distInfo/RECORD").toByteArray()
+        writeArchive(wheel, entries)
         logger.lifecycle("Wrote {}", wheel)
+    }
+
+    /** The RECORD of a wheel: the hash and the size of each entry, but the RECORD itself. */
+    private fun record(entries: Map<String, ByteArray>, path: String) = buildString {
+        entries.forEach { (name, content) ->
+            val digest = MessageDigest.getInstance("SHA-256").digest(content)
+            append(name).append(",sha256=").append(Base64.getUrlEncoder().withoutPadding().encodeToString(digest))
+                .append(',').append(content.size).append('\n')
+        }
+        append(path).append(",,\n")
     }
 
     private fun metadata(version: String) = buildString {
@@ -156,6 +158,36 @@ abstract class PythonWheel : DefaultTask() {
             }
             "windows" -> if (arch == "aarch_64") "win_arm64" else "win_amd64"
             else -> throw IllegalStateException("Unknown platform ${platform.get()}")
+        }
+    }
+}
+
+/**
+ * Writes a zip archive whose entries tell their sizes and checksums before their data, as PyPI requires, see
+ * https://docs.pypi.org/archives: ZipOutputStream writes them after the data of compressed entries, in data
+ * descriptors, unless they're known in advance. It checks that they match what it writes.
+ */
+internal fun writeArchive(file: File, entries: Map<String, ByteArray>) {
+    ZipOutputStream(file.outputStream().buffered()).use { zip ->
+        for ((path, content) in entries) {
+            // compressed as ZipOutputStream compresses, to know the size it writes
+            val deflater = Deflater(Deflater.DEFAULT_COMPRESSION, true)
+            deflater.setInput(content)
+            deflater.finish()
+            val buffer = ByteArray(64 * 1024)
+            while (!deflater.finished()) {
+                deflater.deflate(buffer)
+            }
+            val entry = ZipEntry(path).apply {
+                timeLocal = FIXED_TIME
+                size = content.size.toLong()
+                compressedSize = deflater.bytesWritten
+                crc = CRC32().apply { update(content) }.value
+            }
+            deflater.end()
+            zip.putNextEntry(entry)
+            zip.write(content)
+            zip.closeEntry()
         }
     }
 }
