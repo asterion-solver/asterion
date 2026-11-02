@@ -60,6 +60,16 @@ public record Solution(
         return 206.264806 * pixelSizeMicrons / pixelScale;
     }
 
+    /** The width of the image, in pixels. */
+    public int width() {
+        return (int) Math.round(fieldWidthDeg * 3600 / pixelScale);
+    }
+
+    /** The height of the image, in pixels. */
+    public int height() {
+        return (int) Math.round(fieldHeightDeg * 3600 / pixelScale);
+    }
+
     /**
      * A star of the image which was identified in the catalog.
      *

@@ -15,9 +15,9 @@
  */
 package me.champeau.asterion.web;
 
-import me.champeau.asterion.catalog.DeepSkyObjects;
 import me.champeau.asterion.solver.Parity;
 import me.champeau.asterion.solver.Solution;
+import me.champeau.asterion.solver.SolutionJson;
 import me.champeau.asterion.solver.SolveResult;
 import me.champeau.asterion.solver.SolverOptions;
 
@@ -132,8 +132,8 @@ final class SolveRequest {
      */
     static Json outline(Solution solution) {
         var wcs = solution.wcs();
-        var width = solution.fieldWidthDeg() * 3600 / solution.pixelScale();
-        var height = solution.fieldHeightDeg() * 3600 / solution.pixelScale();
+        var width = solution.width();
+        var height = solution.height();
         double[][] corners = {{-0.5, -0.5}, {width - 0.5, -0.5}, {width - 0.5, height - 0.5}, {-0.5, height - 0.5}};
         var outline = Json.array();
         var steps = 8;
@@ -148,69 +148,24 @@ final class SolveRequest {
         return outline;
     }
 
-    /** Describes a result, with the fields of the JSON output of the command line tool. */
+    /**
+     * Describes a result: the JSON output of the command line tool, with what the page shows besides,
+     * the constellation of the image, its outline on the sky and the positions of the matched stars.
+     */
     static Json describe(String name, SolveResult result) {
-        var stats = result.stats();
-        var json = Json.object()
-                .field("image", name)
-                .field("solved", result.solved())
-                .field("stars", result.stars().size())
-                .field("fwhmPixels", result.stars().medianFwhm());
+        var json = Json.extend(SolutionJson.of(name, result));
         result.solution().ifPresent(s -> {
-            json.field("ra", s.raDeg())
-                    .field("dec", s.decDeg())
-                    .field("scale", s.pixelScale());
-            result.focalLengthMm().ifPresent(focal -> json
-                    .field("focalLength", focal)
-                    .field("pixelSize", result.pixelSizeMicrons().orElseThrow()));
-            json.field("rotation", s.rotationDeg())
-                    .field("flipped", s.flipped())
-                    .field("fieldWidth", s.fieldWidthDeg())
-                    .field("fieldHeight", s.fieldHeightDeg())
-                    .field("fwhmArcsec", result.stars().medianFwhm() * s.pixelScale())
-                    .field("matchedStars", s.matchedStars())
-                    .field("rmsArcsec", s.rmsArcsec())
-                    .field("logOdds", s.logOdds())
-                    .field("index", s.indexName())
-                    .field("wcs", s.wcs().toFitsKeywords());
             var constellation = Constellations.of(s.raDeg(), s.decDeg());
             json.field("constellation", Json.object()
                     .field("abbreviation", constellation.abbreviation())
                     .field("name", constellation.name()));
             json.field("outline", outline(s));
-            var objects = Json.array();
-            var width = (int) Math.round(s.fieldWidthDeg() * 3600 / s.pixelScale());
-            var height = (int) Math.round(s.fieldHeightDeg() * 3600 / s.pixelScale());
-            for (var found : DeepSkyObjects.inField(s.wcs(), width, height)) {
-                var o = found.object();
-                objects.add(Json.object()
-                        .field("name", o.name())
-                        .field("label", o.label())
-                        .field("designation", o.designation())
-                        .field("commonName", o.commonName().isEmpty() ? null : o.commonName())
-                        .field("aliases", o.aliases().isEmpty() ? null : o.aliases())
-                        .field("type", o.type().description())
-                        .field("ra", o.raDeg())
-                        .field("dec", o.decDeg())
-                        .field("x", found.x())
-                        .field("y", found.y())
-                        .field("distance", found.distanceDeg())
-                        .field("majorArcmin", o.majorArcmin())
-                        .field("minorArcmin", o.minorArcmin())
-                        .field("angle", o.angleDeg())
-                        .field("magnitude", o.magnitude()));
-            }
-            json.field("objects", objects);
             var matches = Json.array();
             for (var match : s.matches()) {
                 matches.add(Json.array().add(match.raDeg()).add(match.decDeg()));
             }
             json.field("matches", matches);
         });
-        return json.field("timing", Json.object()
-                .field("readMillis", stats.loadMillis())
-                .field("detectMillis", stats.detectMillis())
-                .field("solveMillis", stats.solveMillis())
-                .field("totalMillis", stats.totalMillis()));
+        return json;
     }
 }

@@ -52,9 +52,17 @@ final class GrayBinner {
 
     /** The binning which is applied to an image: 0 selects it automatically. */
     static int binningFor(int width, int height, int binning) {
+        return binningFor(width, height, binning, false);
+    }
+
+    /**
+     * The binning which is applied to an image: 0 selects it automatically, 2 at least for the raw
+     * frames of color sensors, which removes the pattern of their filters.
+     */
+    static int binningFor(int width, int height, int binning, boolean bayer) {
         var b = binning;
         if (b <= 0) {
-            b = 1;
+            b = bayer ? 2 : 1;
             while ((long) (width / b) * (height / b) > AUTO_BINNING_PIXELS) {
                 b++;
             }

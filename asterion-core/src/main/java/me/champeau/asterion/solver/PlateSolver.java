@@ -24,6 +24,7 @@ import me.champeau.asterion.index.StarIndex;
 import me.champeau.asterion.math.Sphere;
 
 import java.io.IOException;
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -103,11 +104,21 @@ public final class PlateSolver {
         this.indexes = List.copyOf(indexes);
     }
 
-    /** Creates a solver which uses the given index files. */
+    /** Creates a solver which uses the given index files: they stay mapped until the solver is garbage collected. */
     public static PlateSolver open(Path... indexFiles) throws IOException {
+        return open(Arena.ofAuto(), indexFiles);
+    }
+
+    /**
+     * Creates a solver which uses the given index files, mapped in an arena: closing the arena unmaps
+     * them at once, for programs which release the memory of the catalogs when they're done, and the
+     * solver can't be used anymore. The arena must be shared, since a solve searches with several
+     * threads, and closed once no solve runs.
+     */
+    public static PlateSolver open(Arena arena, Path... indexFiles) throws IOException {
         var indexes = new ArrayList<StarIndex>();
         for (var file : indexFiles) {
-            indexes.add(StarIndex.open(file));
+            indexes.add(StarIndex.open(file, arena));
         }
         return new PlateSolver(indexes);
     }
@@ -122,12 +133,22 @@ public final class PlateSolver {
         var image = ImageLoader.load(file, options.binning());
         var loadMillis = (System.nanoTime() - start) / 1e6;
         // nobody else sees the pixels of the image: they can be used as working memory
-        return solve(image.image(), image.hints(), options, loadMillis, true);
+        return solveInPlace(image.image(), image.hints(), options, loadMillis);
     }
 
     /** Solves an image. The image is not modified. */
     public SolveResult solve(GrayImage image, ImageHints hints, SolverOptions options) {
         return solve(image, hints, options, 0, false);
+    }
+
+    /**
+     * Solves an image which nobody else uses, such as the copy of pixels which were read: its pixels
+     * are used as working memory, which saves a copy of the image.
+     *
+     * @param loadMillis how long reading the image took, for the statistics of the result
+     */
+    public SolveResult solveInPlace(GrayImage image, ImageHints hints, SolverOptions options, double loadMillis) {
+        return solve(image, hints, options, loadMillis, true);
     }
 
     private SolveResult solve(GrayImage image, ImageHints hints, SolverOptions options, double loadMillis, boolean ownsImage) {

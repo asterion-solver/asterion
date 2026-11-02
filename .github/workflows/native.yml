@@ -1,7 +1,7 @@
 name: Native executables
 
-# Builds and tests the project, then packages the native executable, on each supported platform.
-# The archives are uploaded as artifacts named `native-<platform>`.
+# Builds and tests the project, then packages the native executable and the native library, on each
+# supported platform. The archives are uploaded as artifacts named `native-<platform>` and `library-<platform>`.
 on:
   workflow_call:
     inputs:
@@ -59,10 +59,10 @@ jobs:
             --set-version-string ProductName "Asterion Solver" \
             --set-version-string FileDescription "Asterion Solver" \
             --set-version-string ProductVersion "$version"
-      - name: Package the native executable
+      - name: Package the native executable and the native library
         shell: bash
         # the executable is not built again, which would remove the version resource
-        run: ./gradlew nativeZip -x nativeCompile ${{ inputs.version != '' && format('-Pversion={0}', inputs.version) || '' }}
+        run: ./gradlew nativeZip :asterion-lib:nativeLibraryZip -x nativeCompile ${{ inputs.version != '' && format('-Pversion={0}', inputs.version) || '' }}
       - name: Smoke test
         shell: bash
         run: |
@@ -99,4 +99,9 @@ jobs:
         with:
           name: native-${{ matrix.platform }}
           path: asterion-cli/build/distributions/*-${{ matrix.platform }}.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: library-${{ matrix.platform }}
+          path: asterion-lib/build/distributions/*-${{ matrix.platform }}.zip
           if-no-files-found: error

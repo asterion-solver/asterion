@@ -15,6 +15,8 @@
  */
 package me.champeau.asterion.web;
 
+import me.champeau.asterion.solver.SolutionJson;
+
 import java.util.Map;
 
 /** Writes JSON documents: the web interface has no dependency for this. */
@@ -32,6 +34,17 @@ final class Json {
 
     static Json array() {
         return new Json('[');
+    }
+
+    /** An object which has the fields of a JSON object already, to add others to. */
+    static Json extend(String object) {
+        if (!object.startsWith("{") || !object.endsWith("}")) {
+            throw new IllegalArgumentException("Not a JSON object: " + object);
+        }
+        var json = new Json('{');
+        json.sb.append(object, 1, object.length() - 1);
+        json.first = object.length() == 2;
+        return json;
     }
 
     private void separator() {
@@ -75,25 +88,7 @@ final class Json {
     }
 
     private void string(String s) {
-        sb.append('"');
-        for (var i = 0; i < s.length(); i++) {
-            var c = s.charAt(i);
-            switch (c) {
-                case '"' -> sb.append("\\\"");
-                case '\\' -> sb.append("\\\\");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        sb.append('"');
+        SolutionJson.quote(sb, s);
     }
 
     @Override
