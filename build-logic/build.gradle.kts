@@ -13,6 +13,15 @@ dependencies {
     implementation(libs.test.retry.plugin)
 }
 
+// the tests of the code of the build, which the check of the project runs
+testing {
+    suites {
+        named<JvmTestSuite>("test") {
+            useJUnitJupiter(libs.versions.junit.get())
+        }
+    }
+}
+
 tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_21)

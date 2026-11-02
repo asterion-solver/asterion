@@ -7,6 +7,11 @@ plugins {
     id("org.jreleaser") version "1.26.0"
 }
 
+// the tests of the code of the build too
+tasks.check {
+    dependsOn(gradle.includedBuild("build-logic").task(":check"))
+}
+
 val executableName = providers.gradleProperty("executableName").get()
 val displayName = providers.gradleProperty("displayName").get()
 

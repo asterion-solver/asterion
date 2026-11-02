@@ -26,6 +26,9 @@ graalvmNative {
         // and @rpath makes them look in the directories they record with -Wl,-rpath, as on Linux
         if (System.getProperty("os.name").startsWith("Mac")) {
             buildArgs.add("-H:NativeLinkerOption=-Wl,-install_name,@rpath/libasterion.dylib")
+            // the oldest macOS which the JDK supports on Apple Silicon, rather than the one of the SDK which builds it,
+            // which the tag of the wheel tells
+            buildArgs.add("-H:NativeLinkerOption=-mmacosx-version-min=11.0")
         }
         // An instrumented library writes its profile when its isolate is torn down, see update-library-pgo.sh
         buildArgs.addAll(pgoInstrument.map { instrumented -> if (instrumented) listOf("-H:+ProfilingEnableProfileDumpHooks") else listOf() })
@@ -97,6 +100,38 @@ tasks.register<Zip>("nativeLibraryBundle") {
     }
 }
 
+// The Python package, asterion-solver on PyPI, which calls the library with ctypes: a wheel per platform, see
+// src/main/python/README.md
+val pythonWheel = tasks.register<PythonWheel>("pythonWheel") {
+    description = "Packages the Python package with the library of the current platform"
+    group = "distribution"
+    packageDirectory = layout.projectDirectory.dir("src/main/python/asterion")
+    // the library, and the libraries of the JDK which native-image may write next to it
+    libraries.from(files(nativeLibrary).asFileTree.matching {
+        include("*.so", "*.dylib", "*.dll")
+    })
+    readme = layout.projectDirectory.file("src/main/python/README.md")
+    licenseRoot = rootProject.layout.projectDirectory
+    licenseFiles.from(rootProject.layout.projectDirectory.file("LICENSE.txt"), rootProject.layout.projectDirectory.dir("third-party").asFileTree)
+    distributionName = "asterion-solver"
+    version = project.version.toString()
+    summary = "A fast blind astrometric plate solver, for the images which programs have in memory"
+    // the deep sky objects of OpenNGC, and the code of the JPEG library of the IJG, see third-party
+    license = "Apache-2.0 AND CC-BY-SA-4.0 AND IJG"
+    requiresPython = ">=3.10"
+    projectUrls = mapOf(
+        "Homepage" to "https://github.com/asterion-solver/asterion",
+        "Documentation" to "https://github.com/asterion-solver/asterion/tree/main/asterion-lib/src/main/python",
+        "Issues" to "https://github.com/asterion-solver/asterion/issues")
+    classifiers = listOf(
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Science/Research",
+        "Programming Language :: Python :: 3",
+        "Topic :: Scientific/Engineering :: Astronomy")
+    platform = providers.nativePlatform()
+    destinationDirectory = layout.buildDirectory.dir("python")
+}
+
 // The programs in C which call the library, see NativeLibraryTest: compiled with Visual C++ on Windows, which
 // native-image requires there anyway, and with the C compiler of the system elsewhere
 val windows = System.getProperty("os.name").startsWith("Windows")
@@ -149,12 +184,16 @@ val nativeLibraryTest = tasks.register<Test>("nativeLibraryTest") {
     // the library, which the programs load: it changes with its build options without the programs changing
     inputs.files(nativeLibrary).withPropertyName("library")
     inputs.files(compileCTests).withPropertyName("programs")
+    // the tests of the Python package, which run against its wheel, installed in an environment of their own
+    inputs.files(pythonWheel).withPropertyName("wheel")
     inputs.dir("src/test/python").withPropertyName("python")
     val programs = cTestDirectory.map { it.asFile.absolutePath }
     val library = nativeLibrary.map { it.destinationDir.absolutePath }
+    val wheels = pythonWheel.flatMap { it.destinationDirectory }.map { it.asFile.absolutePath }
     val python = layout.projectDirectory.dir("src/test/python").asFile.absolutePath
     jvmArgumentProviders.add(CommandLineArgumentProvider {
-        listOf("-Dasterion.cTests=" + programs.get(), "-Dasterion.library=" + library.get(), "-Dasterion.python=" + python)
+        listOf("-Dasterion.cTests=" + programs.get(), "-Dasterion.library=" + library.get(), "-Dasterion.wheels=" + wheels.get(),
+            "-Dasterion.pythonTests=" + python)
     })
 }
 

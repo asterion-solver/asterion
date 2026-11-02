@@ -64,7 +64,8 @@ from any list of stars with `IndexBuilder`. The library requires Java 25.
 
 The `asterion-lib` module builds Asterion as a native shared library, which programs in any language able to
 call C functions use to install catalogs and solve the images they have in memory: see
-[asterion-lib/README.md](asterion-lib/README.md).
+[asterion-lib/README.md](asterion-lib/README.md). Python programs use it through the Python package,
+`pip install asterion-solver`: see [its documentation](asterion-lib/src/main/python/README.md).
 
 ## Project structure
 
@@ -83,7 +84,8 @@ call C functions use to install catalogs and solve the images they have in memor
 - `asterion-cli`: the command line tool, including the [ASTAP compatibility mode](docs/astap-interface.md)
   in the `me.champeau.asterion.cli.astap` package
 - `asterion-lib`: the native shared library, see [From C, C++, Python...](#from-c-c-python): its functions,
-  in `NativeLibrary`, read and write the structures of `src/main/c/asterion.h`, described by `CStructs`
+  in `NativeLibrary`, read and write the structures of `src/main/c/asterion.h`, described by `CStructs`. The
+  Python package, `src/main/python`, wraps them, and `PythonWheel`, in `build-logic`, writes its wheel
 - `build-logic`: the build conventions, an included build
 - `benchmarks`: the [comparison with other solvers](benchmarks/README.md)
 - `integrations`: the scripts for [PixInsight](integrations/pixinsight/README.md) and
@@ -111,9 +113,17 @@ and point `GRAALVM_HOME` to it. There is no GraalVM 25.4 for macOS on Intel, whi
 ```
 
 The tests of the native library, `./gradlew :asterion-lib:nativeLibraryTest`, which `check` and `build` run,
-build the shared library, then compile programs in C against it and run them, with the Python example when
-Python is installed: the programs are compiled with `cc`, or with Visual C++ on Windows, which the build sets
-up the way native-image does.
+build the shared library, then compile programs in C against it and run them: the programs are compiled with
+`cc`, or with Visual C++ on Windows, which the build sets up the way native-image does. Where Python is
+installed, they also install the wheel of the Python package in an environment of their own, as `pip` installs
+it from PyPI, and run its tests, `asterion-lib/src/test/python`, against it. CI runs them with the oldest
+version of Python which the package supports.
+
+The Python package, `asterion-lib/src/main/python`, calls the library with `ctypes`:
+`./gradlew :asterion-lib:pythonWheel` writes its wheel for the current platform, with the library, to
+`asterion-lib/build/python`. The wheel works with Python 3.10 and later, and its tag tells the platforms where
+the library runs: the oldest glibc it needs on Linux, the oldest macOS it supports. `./gradlew -p build-logic test`
+tests the code of the build, which `check` runs too.
 
 The native executable is `asterion-cli/build/native/nativeCompile/asterion`, a single file: images are
 decoded by Asterion itself, not by AWT, which native images don't support on every platform. The
@@ -221,7 +231,8 @@ its own. Both are made by PixInsight itself, on the machine which holds the keys
 
 The `Build` workflow runs for each push to `main`, each pull request, and on demand. It builds and tests the
 native executable on every platform, and uploads the archives as artifacts of the run, named
-`native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days. It then builds
+`native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days, with the native
+library, `library-<platform>`, and the wheel of the Python package, `wheel-<platform>`, which `pip install` takes. It then builds
 and tests the N.I.N.A. plugin with the Windows executable of the same run, and uploads it as `nina-plugin`. Nothing
 is released. To test the Windows archive of the last build of `main`:
 
@@ -263,6 +274,16 @@ To check the release configuration locally, put archives named like the ones of 
 ```
 JRELEASER_GITHUB_TOKEN=dummy ./gradlew jreleaserFullRelease --dryrun -Pversion=1.0.0
 ```
+
+### The Python package
+
+A release also publishes the wheels of the Python package to PyPI, as
+[`asterion-solver`](https://pypi.org/project/asterion-solver/), with trusted publishing, without any secret: PyPI
+trusts the workflow `release.yml` of the repository `asterion-solver/asterion`, with its environment `pypi`, to
+publish it, as its publisher on PyPI tells. The versions of the package are the ones of the project, written the
+way of Python: `1.0.0-rc.1` is `1.0.0rc1`, so the pre-releases are `alpha`, `beta` or `rc`, which the workflow
+checks before building anything. The next development version is committed once the release is published to
+GitHub and PyPI: if PyPI fails, re-running the failed jobs of the workflow publishes it again.
 
 ### The native library
 
