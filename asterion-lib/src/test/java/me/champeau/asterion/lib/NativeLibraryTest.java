@@ -203,8 +203,11 @@ class NativeLibraryTest {
             builder.environment().put("LC_ALL", "C.UTF-8");
         }
         if (WINDOWS) {
-            // Windows finds the DLLs of a program in the directories of the PATH
-            builder.environment().merge("Path", System.getProperty("asterion.library"), (path, library) -> library + ";" + path);
+            // Windows finds the DLLs of a program in the directories of the PATH, whose name has any case: Path in
+            // PowerShell, PATH in Git Bash. A second variable, of another case, would be ignored
+            var environment = builder.environment();
+            var path = environment.keySet().stream().filter("PATH"::equalsIgnoreCase).findFirst().orElse("PATH");
+            environment.merge(path, System.getProperty("asterion.library"), (directories, library) -> library + ";" + directories);
         }
         var process = builder.start();
         var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
