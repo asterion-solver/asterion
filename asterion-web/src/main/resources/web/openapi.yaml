@@ -528,7 +528,8 @@ components:
         fwhmPixels:
           type: [number, "null"]
           format: double
-          description: The median width of the stars, in pixels.
+          description: The median width of the stars, in pixels. Once the image is solved, it is the one of gaussians
+            fitted to the matched stars which are neither faint nor saturated, if there are enough.
         ra:
           type: number
           format: double
@@ -567,7 +568,7 @@ components:
         fwhmArcsec:
           type: [number, "null"]
           format: double
-          description: The median width of the stars, in arcseconds.
+          description: The median width of the stars, fwhmPixels, in arcseconds.
         matchedStars:
           type: integer
           description: The number of stars of the image which were matched with the catalog.

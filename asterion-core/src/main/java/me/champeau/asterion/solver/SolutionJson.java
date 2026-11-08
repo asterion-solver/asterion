@@ -39,7 +39,7 @@ public final class SolutionJson {
         }
         field(sb, "solved", result.solved());
         field(sb, "stars", result.stars().size());
-        field(sb, "fwhmPixels", result.stars().medianFwhm());
+        field(sb, "fwhmPixels", result.fwhmPixels());
         result.solution().ifPresent(s -> {
             field(sb, "ra", s.raDeg());
             field(sb, "dec", s.decDeg());
@@ -52,7 +52,7 @@ public final class SolutionJson {
             field(sb, "flipped", s.flipped());
             field(sb, "fieldWidth", s.fieldWidthDeg());
             field(sb, "fieldHeight", s.fieldHeightDeg());
-            field(sb, "fwhmArcsec", result.stars().medianFwhm() * s.pixelScale());
+            field(sb, "fwhmArcsec", result.fwhmPixels() * s.pixelScale());
             field(sb, "matchedStars", s.matchedStars());
             field(sb, "rmsArcsec", s.rmsArcsec());
             field(sb, "logOdds", s.logOdds());

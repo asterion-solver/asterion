@@ -103,8 +103,9 @@ typedef struct {
     double log_odds;        /* the confidence in the solution */
     double focal_length;    /* the focal length, in millimeters, when the size of the pixels is known, else NAN */
     double pixel_size;      /* the size of the pixels used for the focal length, in micrometers, or NAN */
-    double fwhm_pixels;     /* the median width of the stars, in pixels */
-    double fwhm_arcsec;     /* the median width of the stars, in arcseconds */
+    double fwhm_pixels;     /* the median width of the stars, in pixels: once solved, of gaussians fitted to the
+                               matched stars which are neither faint nor saturated, if there are enough */
+    double fwhm_arcsec;     /* fwhm_pixels, in arcseconds */
     double crpix[2];        /* the WCS, with the conventions of FITS: CRPIX1, CRPIX2 */
     double crval[2];        /* CRVAL1, CRVAL2, in degrees */
     double cd[4];           /* CD1_1, CD1_2, CD2_1, CD2_2, in degrees per pixel */

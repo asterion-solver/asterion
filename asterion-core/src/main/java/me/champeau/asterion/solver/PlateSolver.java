@@ -193,10 +193,13 @@ public final class PlateSolver {
                 stars = points;
             }
         }
+        // the stars are measured in the pixels of the image, which only it has
+        var measureStart = System.nanoTime();
+        var fwhm = StarWidths.fwhm(stars, result.matchedStars(), image);
+        var solveMillis = s.solveMillis() + (System.nanoTime() - measureStart) / 1e6;
         return new SolveResult(result.solution().orElse(null), stars,
-                new SolveResult.Stats(s.quads(), s.candidates(), s.verifications(), loadMillis, detectMillis, s.solveMillis(),
-                        s.usedHints()),
-                result.pixelSizeMicrons().orElse(Double.NaN));
+                new SolveResult.Stats(s.quads(), s.candidates(), s.verifications(), loadMillis, detectMillis, solveMillis, s.usedHints()),
+                result.pixelSizeMicrons().orElse(Double.NaN), result.matchedStars(), fwhm);
     }
 
     /** Which stages a search runs, see {@link #stages}. */
@@ -362,21 +365,7 @@ public final class PlateSolver {
             peak[i] = concentration[i] * stars.flux(i) / (fwhm[i] * fwhm[i]);
         }
         kept.sort((a, b) -> Double.compare(peak[b], peak[a]));
-        var k = kept.size();
-        var x = new double[k];
-        var y = new double[k];
-        var flux = new float[k];
-        var f = new float[k];
-        var c = new float[k];
-        for (var j = 0; j < k; j++) {
-            var i = kept.get(j);
-            x[j] = stars.x(i);
-            y[j] = stars.y(i);
-            flux[j] = stars.flux(i);
-            f[j] = fwhm[i];
-            c[j] = concentration[i];
-        }
-        return new StarList(x, y, flux, f, c);
+        return stars.subset(kept.stream().mapToInt(Integer::intValue).toArray());
     }
 
     /**
@@ -406,23 +395,14 @@ public final class PlateSolver {
         if (kept == stars.size() || kept < 4) {
             return stars;
         }
-        var x = new double[kept];
-        var y = new double[kept];
-        var flux = new float[kept];
-        var fwhm = new float[kept];
-        var concentration = new float[kept];
+        var indices = new int[kept];
         var k = 0;
         for (var i = 0; i < stars.size(); i++) {
             if (keep[i]) {
-                x[k] = stars.x(i);
-                y[k] = stars.y(i);
-                flux[k] = stars.flux(i);
-                fwhm[k] = stars.fwhm()[i];
-                concentration[k] = stars.concentration()[i];
-                k++;
+                indices[k++] = i;
             }
         }
-        return new StarList(x, y, flux, fwhm, concentration);
+        return stars.subset(indices);
     }
 
     /**
@@ -571,6 +551,7 @@ public final class PlateSolver {
         var candidates = 0L;
         var verifications = 0L;
         Solution solution = null;
+        var matched = new int[0];
         var usedHints = false;
         attempts:
         for (var attempt : attempts) {
@@ -612,8 +593,10 @@ public final class PlateSolver {
                             deepest = index;
                         }
                     }
-                    solution = new Refiner(deepest, stars, width, height, o, epoch - deepest.epoch()).refine(h);
+                    var refiner = new Refiner(deepest, stars, width, height, o, epoch - deepest.epoch());
+                    solution = refiner.refine(h);
                     if (solution != null) {
+                        matched = refiner.matchedStars();
                         usedHints = attempt.hinted();
                         break attempts;
                     }
@@ -624,6 +607,7 @@ public final class PlateSolver {
         var solveMillis = (System.nanoTime() - start) / 1e6;
         var pixelSize = options.pixelSizeMicrons() > 0 ? options.pixelSizeMicrons() : hints.pixelSizeMicrons().orElse(Double.NaN);
         return new SolveResult(solution, stars,
-                new SolveResult.Stats(quads, candidates, verifications, 0, 0, solveMillis, usedHints), pixelSize);
+                new SolveResult.Stats(quads, candidates, verifications, 0, 0, solveMillis, usedHints), pixelSize, matched,
+                StarWidths.fwhm(stars, matched, null));
     }
 }

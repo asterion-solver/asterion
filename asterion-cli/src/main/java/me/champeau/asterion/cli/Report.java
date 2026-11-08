@@ -51,7 +51,7 @@ final class Report {
             result.focalLengthMm().ifPresent(focal -> out.accept(
                     Main.format("  Focal:     %.0f mm (%.2f µm pixels)", focal, result.pixelSizeMicrons().orElseThrow())));
             out.accept(Main.format("  Rotation:  %.3f° east of north%s", s.rotationDeg(), s.flipped() ? ", flipped" : ""));
-            var fwhm = result.stars().medianFwhm();
+            var fwhm = result.fwhmPixels();
             out.accept(Main.format("  Stars:     %d matched out of %d, RMS %.2f\" (%.2f px), FWHM %.1f\" (%.1f px)",
                     s.matchedStars(), result.stars().size(), s.rmsArcsec(), s.rmsArcsec() / s.pixelScale(), fwhm * s.pixelScale(), fwhm));
             var objects = objects(s);

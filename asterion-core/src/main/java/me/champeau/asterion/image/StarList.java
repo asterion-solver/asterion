@@ -28,6 +28,8 @@ import java.util.Arrays;
  * @param concentration how much the light of each star is concentrated, compared to a star with a
  * gaussian profile of the same size: about 1 for stars, less for galaxies, nebulae and other
  * extended objects, or 1 if unknown
+ * @param snr the signal-to-noise ratio of the peak of each star, or NaN if unknown
+ * @param saturated whether each star is saturated: its light is clipped, which widens it
  */
 @SuppressWarnings("ArrayRecordComponent") // star lists are large, and never modified once created
 public record StarList(
@@ -35,13 +37,28 @@ public record StarList(
         double[] y,
         float[] flux,
         float[] fwhm,
-        float[] concentration) {
+        float[] concentration,
+        float[] snr,
+        boolean[] saturated) {
     private static final StarList EMPTY = new StarList(new double[0], new double[0], new float[0], new float[0], new float[0]);
 
     public StarList {
-        if (y.length != x.length || flux.length != x.length || fwhm.length != x.length || concentration.length != x.length) {
+        var n = x.length;
+        if (y.length != n || flux.length != n || fwhm.length != n || concentration.length != n || snr.length != n
+                || saturated.length != n) {
             throw new IllegalArgumentException("All the arrays must have the same length");
         }
+    }
+
+    /** A list of stars whose signal-to-noise ratio is unknown, and which aren't saturated. */
+    public StarList(double[] x, double[] y, float[] flux, float[] fwhm, float[] concentration) {
+        this(x, y, flux, fwhm, concentration, unknown(x.length), new boolean[x.length]);
+    }
+
+    private static float[] unknown(int n) {
+        var values = new float[n];
+        Arrays.fill(values, Float.NaN);
+        return values;
     }
 
     /** A list of stars whose concentration is unknown: they are taken for stars. */
@@ -84,6 +101,34 @@ public record StarList(
 
     public float flux(int i) {
         return flux[i];
+    }
+
+    /** The stars of these indices, in this order, with all that is known of them. */
+    public StarList subset(int[] indices) {
+        var n = indices.length;
+        var sx = new double[n];
+        var sy = new double[n];
+        var sflux = new float[n];
+        var sfwhm = new float[n];
+        var sconcentration = new float[n];
+        var ssnr = new float[n];
+        var ssaturated = new boolean[n];
+        for (var k = 0; k < n; k++) {
+            var i = indices[k];
+            sx[k] = x[i];
+            sy[k] = y[i];
+            sflux[k] = flux[i];
+            sfwhm[k] = fwhm[i];
+            sconcentration[k] = concentration[i];
+            ssnr[k] = snr[i];
+            ssaturated[k] = saturated[i];
+        }
+        return new StarList(sx, sy, sflux, sfwhm, sconcentration, ssnr, ssaturated);
+    }
+
+    /** The same stars, at other positions. */
+    public StarList withPositions(double[] x, double[] y) {
+        return new StarList(x, y, flux, fwhm, concentration, snr, saturated);
     }
 
     /** The median full width at half maximum of the stars, in pixels, or 0 if unknown. */

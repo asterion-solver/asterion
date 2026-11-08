@@ -55,9 +55,13 @@ final class Refiner {
     private double[] bestDistance;
     private final double[] pairX;
     private final double[] pairY;
+    /** The index of the star of each pair, in the stars of the image. */
+    private final int[] pairStar;
     private final double[] pairVec;
     private final double[] residuals;
     private int pairs;
+    /** The stars which the solution matched with the catalog, once found. */
+    private int[] matchedStars = new int[0];
 
     Refiner(StarIndex index, StarList stars, int width, int height, SolverOptions options, double years) {
         this.index = index;
@@ -72,6 +76,7 @@ final class Refiner {
         this.centerY = (height - 1) / 2.0;
         this.pairX = new double[count];
         this.pairY = new double[count];
+        this.pairStar = new int[count];
         this.pairVec = new double[3 * count];
         this.residuals = new double[count];
     }
@@ -168,6 +173,7 @@ final class Refiner {
         wcs = WcsFitter.withInverse(wcs, width, height);
         var sky = wcs.pixelToSky(centerX, centerY);
         var scale = wcs.pixelScale();
+        matchedStars = Arrays.copyOf(pairStar, pairs);
         return new Solution(wcs, sky[0], sky[1], scale, wcs.rotation(), wcs.flipped(),
                 width * scale / 3600, height * scale / 3600, pairs, rmsArcsec, h.logOdds, index.name(), List.copyOf(matches));
     }
@@ -319,6 +325,7 @@ final class Refiner {
             if (j >= 0) {
                 pairX[pairs] = x[j];
                 pairY[pairs] = y[j];
+                pairStar[pairs] = j;
                 pairVec[3 * pairs] = refVec[3 * k];
                 pairVec[3 * pairs + 1] = refVec[3 * k + 1];
                 pairVec[3 * pairs + 2] = refVec[3 * k + 2];
@@ -368,6 +375,7 @@ final class Refiner {
             if (residuals[i] <= limit) {
                 pairX[kept] = pairX[i];
                 pairY[kept] = pairY[i];
+                pairStar[kept] = pairStar[i];
                 pairVec[3 * kept] = pairVec[3 * i];
                 pairVec[3 * kept + 1] = pairVec[3 * i + 1];
                 pairVec[3 * kept + 2] = pairVec[3 * i + 2];
@@ -377,5 +385,10 @@ final class Refiner {
         var removed = kept < pairs;
         pairs = kept;
         return removed;
+    }
+
+    /** The indices of the stars which the solution matched with the catalog, in the stars of the image. */
+    int[] matchedStars() {
+        return matchedStars;
     }
 }
