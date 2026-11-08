@@ -200,9 +200,17 @@ async function pickImage() {
     }
 }
 
+/** Counts the images chosen: the answer to a solve is only shown while its image is still the chosen one. */
+let selection = 0;
+
 function showFile() {
     const file = $('file').files[0];
     $('drop-text').textContent = file ? `${file.name} (${size(file.size)})` : 'Drop an image here, or click to choose one';
+    // the result on display is the one of the previous image, which would be taken for the one of this image
+    selection++;
+    const result = $('result');
+    result.hidden = true;
+    result.replaceChildren();
 }
 
 $('solve-form').addEventListener('submit', async event => {
@@ -219,6 +227,7 @@ $('solve-form').addEventListener('submit', async event => {
     query.set('blind', event.target.blind.checked);
     const button = $('solve-button');
     const result = $('result');
+    const solved = selection;
     button.disabled = true;
     button.textContent = 'Solving…';
     result.hidden = false;
@@ -226,6 +235,7 @@ $('solve-form').addEventListener('submit', async event => {
     try {
         const response = await fetch('api/solve?' + query, {method: 'POST', body: file});
         const data = await response.json();
+        if (solved !== selection) return;
         const views = response.ok ? resultView(data) : [element('div', data.error, 'status error')];
         result.replaceChildren(...views);
         if (response.ok) {
@@ -233,6 +243,7 @@ $('solve-form').addEventListener('submit', async event => {
             thumbnailView(file, data).then(view => view && result.contains(views[0]) && views[0].after(view));
         }
     } catch (e) {
+        if (solved !== selection) return;
         result.replaceChildren(e instanceof TypeError ? unreachableView() : element('div', String(e), 'status error'));
     } finally {
         button.disabled = false;
