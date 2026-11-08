@@ -736,7 +736,7 @@ final class NativeLibrary {
         setDouble(SOLUTION, out, "detect_ms", stats.detectMillis());
         setDouble(SOLUTION, out, "solve_ms", stats.solveMillis());
         setInt(SOLUTION, out, "stars", result.stars().size());
-        setDouble(SOLUTION, out, "fwhm_pixels", result.stars().medianFwhm());
+        setDouble(SOLUTION, out, "fwhm_pixels", result.fwhmPixels());
         var s = result.solution().orElse(null);
         if (s == null) {
             return;
@@ -749,7 +749,7 @@ final class NativeLibrary {
         setDouble(SOLUTION, out, "field_height", s.fieldHeightDeg());
         setDouble(SOLUTION, out, "rms", s.rmsArcsec());
         setDouble(SOLUTION, out, "log_odds", s.logOdds());
-        setDouble(SOLUTION, out, "fwhm_arcsec", result.stars().medianFwhm() * s.pixelScale());
+        setDouble(SOLUTION, out, "fwhm_arcsec", result.fwhmPixels() * s.pixelScale());
         result.focalLengthMm().ifPresent(focal -> {
             setDouble(SOLUTION, out, "focal_length", focal);
             setDouble(SOLUTION, out, "pixel_size", result.pixelSizeMicrons().orElseThrow());

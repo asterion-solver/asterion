@@ -26,16 +26,27 @@ public final class SolveResult {
     private final StarList stars;
     private final Stats stats;
     private final double pixelSizeMicrons;
+    private final int[] matchedStars;
+    private final double fwhmPixels;
 
     /**
      * @param solution the solution, or null if none was found
      * @param pixelSizeMicrons the size of the pixels of the image in micrometers, or NaN if it isn't known
+     * @param matchedStars the indices of the stars which the solution matched with the catalog
+     * @param fwhmPixels the median width of the stars, see {@link StarWidths}
      */
-    SolveResult(Solution solution, StarList stars, Stats stats, double pixelSizeMicrons) {
+    SolveResult(Solution solution, StarList stars, Stats stats, double pixelSizeMicrons, int[] matchedStars, double fwhmPixels) {
         this.solution = solution;
         this.stars = stars;
         this.stats = stats;
         this.pixelSizeMicrons = pixelSizeMicrons;
+        this.matchedStars = matchedStars;
+        this.fwhmPixels = fwhmPixels;
+    }
+
+    /** The indices of the stars which the solution matched with the catalog, in {@link #stars()}. */
+    int[] matchedStars() {
+        return matchedStars;
     }
 
     /** The solution, if one was found. */
@@ -50,6 +61,16 @@ public final class SolveResult {
     /** The stars which were detected in the image, sorted by decreasing brightness. */
     public StarList stars() {
         return stars;
+    }
+
+    /**
+     * The median full width at half maximum of the stars of the image, in pixels, or 0 without stars. Once the image is
+     * solved, it is the one of the stars which were matched with the catalog, bright enough to be measured reliably, and
+     * not saturated, fitted with a gaussian when the pixels of the image were solved. Otherwise, or with too few such
+     * stars, it is the one of the stars which were detected.
+     */
+    public double fwhmPixels() {
+        return fwhmPixels;
     }
 
     /** What the solver did. */

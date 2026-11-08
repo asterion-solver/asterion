@@ -83,7 +83,7 @@ final class WideField {
             x[i] = cx + factor * dx;
             y[i] = cy + factor * dy;
         }
-        return new StarList(x, y, stars.flux(), stars.fwhm(), stars.concentration());
+        return stars.withPositions(x, y);
     }
 
     /**

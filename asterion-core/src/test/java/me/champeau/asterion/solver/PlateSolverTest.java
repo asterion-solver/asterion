@@ -131,6 +131,31 @@ class PlateSolverTest {
     }
 
     @Test
+    void measuresTheWidthOfTheStarsWhichWereMatched() {
+        var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 83.8, -5.4, 20, 30, false);
+        var image = sky.render(truth, WIDTH, HEIGHT, 13);
+        // the frame of a camera with little signal: more spots of noise and hot pixels, narrower than stars, than stars
+        var random = new Random(17);
+        for (var spot = 0; spot < 3000; spot++) {
+            var cx = 3 + random.nextDouble() * (WIDTH - 6);
+            var cy = 3 + random.nextDouble() * (HEIGHT - 6);
+            var peak = 100 + 100 * random.nextDouble();
+            for (var y = (int) cy - 2; y <= (int) cy + 2; y++) {
+                for (var x = (int) cx - 2; x <= (int) cx + 2; x++) {
+                    var d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+                    image.data()[y * WIDTH + x] += (float) (peak * Math.exp(-d2 / (2 * 0.6 * 0.6)));
+                }
+            }
+        }
+        var result = solver.solve(image, ImageHints.none(), SolverOptions.defaults());
+        assertTrue(result.solved());
+        // the stars are gaussians whose sigma is 1.4 pixels
+        var fwhm = 1.4 * 2 * Math.sqrt(2 * Math.log(2));
+        assertTrue(result.stars().medianFwhm() < 0.7 * fwhm, "median width of the detections: " + result.stars().medianFwhm());
+        assertEquals(fwhm, result.fwhmPixels(), 0.05 * fwhm);
+    }
+
+    @Test
     void solvesStarLists() {
         var truth = SyntheticSky.wcs(WIDTH, HEIGHT, 150, 35, 22, 77, false);
         var result = solver.solve(starList(truth, 0.2, 0), WIDTH, HEIGHT, ImageHints.none(), SolverOptions.defaults());

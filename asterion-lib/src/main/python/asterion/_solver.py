@@ -120,9 +120,10 @@ class Result:
         catalog: the name of the catalog which solved the image, such as "gaia-500"
         focal_length: the focal length, in millimeters, when pixel_size was given
         pixel_size: the size of the pixels used for the focal length, in micrometers
-        fwhm_arcsec: the median width of the stars, in arcseconds
+        fwhm_arcsec: fwhm_pixels, in arcseconds
         stars: the number of stars detected in the image
-        fwhm_pixels: the median width of the stars, in pixels, or None without stars
+        fwhm_pixels: the median width of the stars, in pixels, or 0 without stars: once solved, of gaussians fitted
+            to the matched stars which are neither faint nor saturated, if there are enough
         read_ms: how long copying the pixels took, in milliseconds
         detect_ms: how long detecting the stars took, in milliseconds
         solve_ms: how long solving took, in milliseconds

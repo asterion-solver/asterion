@@ -450,6 +450,8 @@ public final class StarDetector {
         var sflux = new float[limit];
         var sfwhm = new float[limit];
         var sconcentration = new float[limit];
+        var ssnr = new float[limit];
+        var ssaturated = new boolean[limit];
         var ok = new boolean[limit];
         var windows = ThreadLocal.withInitial(Window::new);
         var max = options.maxStars();
@@ -463,6 +465,8 @@ public final class StarDetector {
         var oflux = new float[0];
         var ofwhm = new float[0];
         var oconcentration = new float[0];
+        var osnr = new float[0];
+        var osaturated = new boolean[0];
         var count = 0;
         var measured = 0;
         while (true) {
@@ -476,6 +480,8 @@ public final class StarDetector {
                     sflux[j] = (float) m[2];
                     sfwhm[j] = (float) m[3];
                     sconcentration[j] = (float) m[4];
+                    ssnr[j] = (float) m[5];
+                    ssaturated[j] = m[6] != 0;
                     ok[j] = true;
                 }
             });
@@ -498,6 +504,8 @@ public final class StarDetector {
             oflux = new float[size];
             ofwhm = new float[size];
             oconcentration = new float[size];
+            osnr = new float[size];
+            osaturated = new boolean[size];
             Arrays.fill(head, -1);
             count = 0;
             for (var r = m - 1; r >= 0 && count < size; r--) {
@@ -526,6 +534,8 @@ public final class StarDetector {
                 oflux[count] = sflux[j];
                 ofwhm[count] = sfwhm[j];
                 oconcentration[count] = sconcentration[j];
+                osnr[count] = ssnr[j];
+                osaturated[count] = ssaturated[j];
                 next[count] = head[gy * gw + gx];
                 head[gy * gw + gx] = count;
                 count++;
@@ -541,7 +551,7 @@ public final class StarDetector {
             ofwhm[i] *= binning;
         }
         return new StarList(Arrays.copyOf(ox, count), Arrays.copyOf(oy, count), Arrays.copyOf(oflux, count), Arrays.copyOf(ofwhm, count),
-                Arrays.copyOf(oconcentration, count));
+                Arrays.copyOf(oconcentration, count), Arrays.copyOf(osnr, count), Arrays.copyOf(osaturated, count));
     }
 
     private boolean saturated(int px, int py) {
@@ -559,7 +569,7 @@ public final class StarDetector {
      * Measures the star which is around a pixel.
      *
      * @param window a window on the subtracted image, which is moved to the star
-     * @return (x, y, flux, fwhm, concentration), or null if this isn't a star
+     * @return (x, y, flux, fwhm, concentration, signal-to-noise ratio of the peak, 1 if saturated), or null if this isn't a star
      */
     private double[] measure(int px, int py, Window window) {
         window.reset(px, py, 8);
@@ -701,9 +711,11 @@ public final class StarDetector {
         // width: the light of an extended object is spread, and its flux is larger than that. The
         // light of a saturated star is clipped, which spreads it too: it is taken for a star
         var concentration = 1.13 * peak * fwhm * fwhm / flux;
-        if (saturated(mx, my)) {
+        var saturated = saturated(mx, my);
+        if (saturated) {
             concentration = Math.max(1, concentration);
         }
-        return new double[]{cx, cy, flux, fwhm, concentration};
+        var noise = sigma[Math.min(tilesY - 1, my / tile) * tilesX + Math.min(tilesX - 1, mx / tile)];
+        return new double[]{cx, cy, flux, fwhm, concentration, peak / noise, saturated ? 1 : 0};
     }
 }

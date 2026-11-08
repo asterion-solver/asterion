@@ -18,7 +18,10 @@ package me.champeau.asterion.image;
 import me.champeau.asterion.SyntheticSky;
 import org.junit.jupiter.api.Test;
 
+import java.util.Random;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StarDetectorTest {
@@ -68,7 +71,7 @@ class StarDetectorTest {
         var width = 1086;
         var height = 300;
         var data = new float[width * height];
-        var random = new java.util.Random(7);
+        var random = new Random(7);
         for (var i = 0; i < data.length; i++) {
             data[i] = (float) (500 + 3 * random.nextGaussian());
         }
@@ -101,12 +104,44 @@ class StarDetectorTest {
         var width = 400;
         var height = 300;
         var data = new float[width * height];
-        var random = new java.util.Random(3);
+        var random = new Random(3);
         for (var i = 0; i < data.length; i++) {
             data[i] = (float) (500 + 5 * random.nextGaussian());
         }
         data[150 * width + 200] = 60000;
         assertEquals(0, StarDetector.detect(new GrayImage(width, height, data)).size());
+    }
+
+    @Test
+    void measuresTheSignalToNoiseRatioAndTheSaturationOfStars() {
+        var width = 300;
+        var height = 200;
+        var data = new float[width * height];
+        var random = new Random(5);
+        for (var i = 0; i < data.length; i++) {
+            data[i] = (float) (500 + 5 * random.nextGaussian());
+        }
+        // a star whose peak is 400 times the noise, and a brighter one, clipped by the sensor
+        double[][] stars = {{80.4, 100.3, 2000}, {220.6, 90.2, 20000}};
+        for (var star : stars) {
+            for (var y = 0; y < height; y++) {
+                for (var x = 0; x < width; x++) {
+                    var d2 = (x - star[0]) * (x - star[0]) + (y - star[1]) * (y - star[1]);
+                    data[y * width + x] += (float) (star[2] * Math.exp(-d2 / 8));
+                }
+            }
+        }
+        for (var i = 0; i < data.length; i++) {
+            data[i] = Math.min(data[i], 6500);
+        }
+        var detected = StarDetector.detect(new GrayImage(width, height, data));
+        assertEquals(2, detected.size());
+        // the brightest first
+        assertEquals(220.6, detected.x(0), 0.3);
+        assertTrue(detected.saturated()[0]);
+        assertEquals(80.4, detected.x(1), 0.1);
+        assertFalse(detected.saturated()[1]);
+        assertEquals(400, detected.snr()[1], 60);
     }
 
     @Test
