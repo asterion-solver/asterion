@@ -151,7 +151,6 @@ form.inline { display: flex; align-items: flex-end; gap: 0.75rem; margin-top: 1r
 .status.error { color: var(--error); }
 
 .thumbnail { margin: 0.75rem 0; }
-.thumbnail .frame { position: relative; display: inline-block; max-width: 100%; cursor: pointer; }
 .thumbnail canvas {
     display: block;
     max-width: 100%;
@@ -159,22 +158,6 @@ form.inline { display: flex; align-items: flex-end; gap: 0.75rem; margin-top: 1r
     border: 1px solid var(--border);
     border-radius: 4px;
 }
-.thumbnail figcaption { color: var(--muted); font-size: 0.85em; margin-top: 0.4rem; }
-.thumbnail .annotated { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 0.6rem; }
-.thumbnail .annotated div { flex-basis: 100%; }
-
-/* the overlay of the solution, shown when the image is hovered or clicked: what it draws is styled
-   in the overlay itself, see OVERLAY_STYLE in app.js */
-.overlay {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-}
-.frame:hover .overlay, .frame.pinned .overlay { opacity: 1; }
 
 .objects { margin: 0.4rem 0 0.2rem; }
 .objects .object { font-weight: 600; }
@@ -225,6 +208,55 @@ svg.sky { width: 100%; height: auto; display: block; }
 .sky-object { fill: none; stroke: #ffc45c; stroke-width: 1.2; stroke-dasharray: 3 2; }
 .sky-object-label { fill: #ffc45c; font-size: 12px; text-anchor: middle; }
 .sky-compass { fill: rgba(255, 255, 255, 0.6); font-size: 14px; font-weight: 600; text-anchor: middle; }
+
+/* the sky view, which can be dragged and zoomed: the image on a canvas, under the rest */
+.sky-view { margin: 0.75rem 0 1rem; }
+.sky-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 2;
+    max-height: 75vh;
+    background: var(--sky);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+.sky-stage.dragging { cursor: grabbing; }
+.sky-stage canvas, .sky-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sky-overlay .sky-object { stroke-width: 1.4; }
+.sky-overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, 0.7); stroke-width: 3px; stroke-linejoin: round; }
+.sky-overlay .sky-grid { stroke: rgba(130, 180, 255, 0.4); }
+.sky-grid-label { fill: rgb(170, 205, 255); font-size: 12px; }
+.sky-compass-arrow { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; }
+.sky-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.sky-controls button { min-width: 2.2rem; }
+.sky-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 0.3rem; color: var(--muted); }
+.sky-view figcaption { color: var(--muted); font-size: 0.85em; margin-top: 0.4rem; }
+.sky-full-screen {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    min-width: 0;
+    height: 34px;
+    padding: 0;
+    color: #ffffff;
+    background: rgba(11, 16, 34, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 6px;
+    cursor: pointer;
+}
+.sky-full-screen:hover { background: rgba(11, 16, 34, 0.9); }
+.sky-full-screen[hidden] { display: none; }
+.sky-full-screen svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* on the whole screen, the sky takes the height which the controls leave */
+.sky-view:fullscreen { display: flex; flex-direction: column; margin: 0; padding: 0.75rem; background: var(--bg); color: var(--text); }
+.sky-view:fullscreen .sky-stage { flex: 1 1 auto; min-height: 0; max-height: none; aspect-ratio: auto; }
 
 /* the buttons of a catalog stay on one line */
 td.actions { white-space: nowrap; }

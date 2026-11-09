@@ -239,8 +239,15 @@ $('solve-form').addEventListener('submit', async event => {
         const views = response.ok ? resultView(data) : [element('div', data.error, 'status error')];
         result.replaceChildren(...views);
         if (response.ok) {
-            // below the status, unless another image was submitted meanwhile
-            thumbnailView(file, data).then(view => view && result.contains(views[0]) && views[0].after(view));
+            // the image on the sky view of a solution, or below the status, unless another image was submitted meanwhile
+            picture(file, data).then(p => {
+                if (!p || !result.contains(views[0])) return;
+                if (data.solved) {
+                    result.querySelectorAll('.sky-view').forEach(view => view.dispatchEvent(new CustomEvent('picture', {detail: p})));
+                } else {
+                    views[0].after(thumbnailView(p));
+                }
+            });
         }
     } catch (e) {
         if (solved !== selection) return;
@@ -269,66 +276,39 @@ function unreachableView() {
     return view;
 }
 
-/** The width of thumbnails, in pixels: they are shown smaller, sharp on high density screens. */
-const THUMBNAIL_WIDTH = 800;
+/** The width of the pictures which the browser decodes, in pixels: the sky view zooms in on them. */
+const PICTURE_WIDTH = 2048;
 /** Larger files are not decoded by the browser: their decoding takes a lot of memory. */
 const THUMBNAIL_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
- * A thumbnail of a submitted image, with an overlay of the solution: the coordinates, the
- * orientation and the deep sky objects. It is made once the result is shown, rather than while the
- * image is solved, as the server often runs on the same machine, and the solution never contains
- * it, so that the callers of the API don't pay for it. The browser makes it from the file it
- * uploaded when it can, and asks the server for it otherwise, for FITS files for example.
+ * The picture of a submitted image, which the sky view of its solution draws, or the page shows when it
+ * isn't solved. It is made once the result is shown, rather than while the image is solved, as the server
+ * often runs on the same machine, and the solution never contains it, so that the callers of the API don't
+ * pay for it. The browser makes it from the file it uploaded when it can, and asks the server for it
+ * otherwise, for FITS files for example.
  *
- * @return a promise of the view, or of null when there's no thumbnail
+ * @return a promise of the picture, an image bitmap, whether its rows are bottom up, and a function which
+ * gives a promise of the image at its size, or of null when the browser can't make it; or of null when
+ * there's no picture
  */
-async function thumbnailView(file, data) {
-    const picture = await browserPicture(file, data) || await serverPicture(data);
-    if (!picture) return null;
-    const {bitmap, bottomUp} = picture;
+async function picture(file, data) {
+    const decoded = await browserPicture(file, data) || await serverPicture(data);
+    if (!decoded) return null;
+    const full = async () => await browserPicture(file, data, true) || await serverPicture(data, true);
+    return {...decoded, full};
+}
+
+/** The thumbnail of an image which isn't solved. */
+function thumbnailView({bitmap}) {
     const canvas = element('canvas');
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     canvas.getContext('2d').drawImage(bitmap, 0, 0);
     bitmap.close();
-    const frame = element('div', undefined, 'frame');
-    frame.append(canvas);
     const figure = element('figure', undefined, 'thumbnail');
-    figure.append(frame);
-    if (data.solved) {
-        frame.append(overlay(data, canvas.width, canvas.height, bottomUp));
-        // hovering shows the overlay, and clicking keeps it, which touch screens need
-        frame.addEventListener('click', () => frame.classList.toggle('pinned'));
-        figure.append(element('figcaption', 'Hover over the image, or click it, to show its coordinates, its orientation and its objects'));
-        figure.append(annotatedImageView(file, data));
-    }
+    figure.append(canvas);
     return figure;
-}
-
-/** The button which saves the image at its size, with the overlay of the thumbnail. */
-function annotatedImageView(file, data) {
-    const view = element('div', undefined, 'annotated');
-    const button = element('button', 'Save annotated image (.jpg)');
-    button.title = 'The image at its size, with its coordinates, its orientation and its objects';
-    const failure = element('div', 'The browser couldn\'t make the annotated image: it may be too large for it.', 'muted');
-    failure.hidden = true;
-    button.addEventListener('click', async () => {
-        button.disabled = true;
-        failure.hidden = true;
-        try {
-            const blob = await annotatedImage(file, data);
-            if (blob) {
-                save(blob, baseName(data.image) + '.annotated.jpg');
-            } else {
-                failure.hidden = false;
-            }
-        } finally {
-            button.disabled = false;
-        }
-    });
-    view.append(button, failure);
-    return view;
 }
 
 /**
@@ -342,7 +322,7 @@ async function browserPicture(file, data, full = false) {
     if (!file.type.startsWith('image/') || file.size > THUMBNAIL_MAX_BYTES) return null;
     let bitmap;
     try {
-        bitmap = await createImageBitmap(file, full ? {} : {resizeWidth: THUMBNAIL_WIDTH, resizeQuality: 'medium'});
+        bitmap = await createImageBitmap(file, full ? {} : {resizeWidth: PICTURE_WIDTH, resizeQuality: 'medium'});
     } catch {
         return null;
     }
@@ -372,41 +352,6 @@ async function serverPicture(data, full = false) {
     } catch {
         return null;
     }
-}
-
-/**
- * The image at its size with the overlay of its solution, to save, as a JPEG file. The overlay is
- * laid out for a thumbnail, and scaled with the image, so that the saved image looks like the page.
- *
- * @return a promise of the file, or of null when the image can't be displayed, or is too large
- * for the browser
- */
-async function annotatedImage(file, data) {
-    const picture = await browserPicture(file, data, true) || await serverPicture(data, true);
-    if (!picture) return null;
-    const {bitmap, bottomUp} = picture;
-    const canvas = element('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const context = canvas.getContext('2d');
-    context.drawImage(bitmap, 0, 0);
-    bitmap.close();
-    const svg = overlay(data, THUMBNAIL_WIDTH, canvas.height * THUMBNAIL_WIDTH / canvas.width, bottomUp);
-    svg.setAttribute('width', canvas.width);
-    svg.setAttribute('height', canvas.height);
-    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type: 'image/svg+xml'}));
-    try {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    } catch {
-        return null;
-    } finally {
-        URL.revokeObjectURL(url);
-    }
-    // null when the canvas is larger than what the browser can encode
-    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
 }
 
 /** The name of an image without its extension, for the names of the files made from it. */
@@ -471,18 +416,6 @@ function wcsProjection(wcs) {
     };
 }
 
-/** The radius of the outlines whose labels are inside, in pixels of the thumbnail: they would hide smaller objects. */
-const LABELS_INSIDE = 80;
-/** The objects of the catalogs of Lynds which an overlay shows, at most. */
-const MAX_LYNDS_OBJECTS = 6;
-/** The objects which the whole image is in that an overlay names, at most: complexes are listed as nested parts. */
-const MAX_ENCLOSING_OBJECTS = 3;
-
-/** The width of the label of an object, about: its font is 15 pixels high. */
-function labelWidth(text) {
-    return text.length * 8.5;
-}
-
 /** Tells if two boxes, [left, top, right, bottom], overlap. */
 function intersects(p, q) {
     return p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
@@ -490,277 +423,6 @@ function intersects(p, q) {
 
 /** The steps of the grid of coordinates, in degrees. */
 const GRID_STEPS = [1, 2, 5, 10, 15, 20, 30].map(m => m / 60).concat([1, 2, 5, 10, 15, 20, 30]);
-
-/**
- * The style of what overlays draw. It's in the overlays, rather than in the style sheet of the
- * page, which doesn't apply to the overlays of the saved images, drawn as images.
- */
-const OVERLAY_STYLE = `
-.overlay { font: 600 15px system-ui, sans-serif; }
-.overlay .grid { fill: none; stroke: rgba(130, 180, 255, 0.55); stroke-width: 1; }
-.overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 3px; stroke-linejoin: round; }
-.overlay .grid-label { fill: rgb(170, 205, 255); font-weight: 500; font-size: 13px; }
-.overlay .object { fill: none; stroke: rgb(255, 200, 90); stroke-width: 1.5; }
-.overlay .object-label { fill: rgb(255, 210, 120); }
-.overlay .compass { stroke: rgb(240, 240, 240); stroke-width: 2; }
-.overlay .compass-label { fill: rgb(240, 240, 240); text-anchor: middle; }`;
-
-/**
- * The overlay of a thumbnail, in the pixels of the thumbnail: the grid of coordinates, a compass
- * which shows north and east, and the outlines of the deep sky objects.
- */
-function overlay(data, thumbWidth, thumbHeight, bottomUp) {
-    const ns = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('class', 'overlay');
-    svg.setAttribute('viewBox', `0 0 ${thumbWidth} ${thumbHeight}`);
-    const add = (tag, attributes, text) => {
-        const e = document.createElementNS(ns, tag);
-        for (const [k, v] of Object.entries(attributes)) e.setAttribute(k, v);
-        if (text !== undefined) e.textContent = text;
-        svg.append(e);
-        return e;
-    };
-    add('style', {}, OVERLAY_STYLE);
-    const projection = wcsProjection(data.wcs);
-    const width = Math.round(data.fieldWidth * 3600 / data.scale);
-    const height = Math.round(data.fieldHeight * 3600 / data.scale);
-    const k = thumbWidth / width;
-    // from the pixels of the image to the ones of the thumbnail
-    const toThumb = ([x, y]) => [(x + 0.5) * k, bottomUp ? (height - y - 0.5) * k : (y + 0.5) * k];
-    const project = (ra, dec) => {
-        const p = projection.toPixel(ra, dec);
-        return p && toThumb(p);
-    };
-    const inside = p => p && p[0] >= 0 && p[1] >= 0 && p[0] <= thumbWidth && p[1] <= thumbHeight;
-    const path = points => {
-        let d = '', pen = false;
-        for (const p of points) {
-            if (!p) {
-                pen = false;
-                continue;
-            }
-            d += `${pen ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`;
-            pen = true;
-        }
-        return d;
-    };
-
-    // the extent of the field on the sky, the right ascensions relative to the one of the center
-    const [raCenter, decCenter] = projection.toSky((width - 1) / 2, (height - 1) / 2);
-    let decMin = 90, decMax = -90, raMin = 180, raMax = -180;
-    for (let i = 0; i <= 8; i++) {
-        for (let j = 0; j <= 8; j++) {
-            const [ra, dec] = projection.toSky(i * (width - 1) / 8, j * (height - 1) / 8);
-            const dra = ((ra - raCenter + 540) % 360) - 180;
-            decMin = Math.min(decMin, dec);
-            decMax = Math.max(decMax, dec);
-            raMin = Math.min(raMin, dra);
-            raMax = Math.max(raMax, dra);
-        }
-    }
-    for (const pole of [90, -90]) {
-        if (inside(project(0, pole))) {
-            if (pole > 0) {
-                decMax = 90;
-            } else {
-                decMin = -90;
-            }
-            raMin = -180;
-            raMax = 180;
-        }
-    }
-    const diagonal = Math.hypot(data.fieldWidth, data.fieldHeight);
-    const nice = target => GRID_STEPS.find(s => s >= target) || 30;
-    const decStep = nice(diagonal / 5);
-    const raStep = nice(decStep / Math.max(0.1, Math.cos(decCenter * Math.PI / 180)));
-    const samples = 96;
-    // the corner of the compass, which the labels leave free
-    const compass = [thumbWidth - 120, 0, thumbWidth, 120];
-    const clear = box => !intersects(box, compass);
-    // the boxes of the labels of the grid, which the labels of objects on the edges avoid
-    const gridLabels = [];
-    // the label of a line, where it crosses an edge of the image: declinations on the left,
-    // right ascensions at the bottom, or else on the opposite edge
-    const label = (points, edges, text) => {
-        const crossings = [];
-        for (let i = 1; i < points.length; i++) {
-            const [p, q] = [points[i - 1], points[i]];
-            if (!p || !q || inside(p) === inside(q)) continue;
-            const [x, y] = inside(p) ? p : q;
-            const distances = {left: x, right: thumbWidth - x, top: y, bottom: thumbHeight - y};
-            crossings.push([x, y, Object.keys(distances).reduce((a, b) => distances[a] <= distances[b] ? a : b)]);
-        }
-        const crossing = edges.map(edge => crossings.find(c => c[2] === edge)).find(c => c);
-        if (!crossing) return;
-        const [x, y, edge] = crossing;
-        // the width of the label, about: the font is 13 pixels high
-        const width = text.length * 7;
-        const along = Math.min(Math.max(x + 4, 4), thumbWidth - 4 - width);
-        const at = {
-            left: {x: 4, y: y - 4},
-            right: {x: thumbWidth - 4 - width, y: y - 4},
-            bottom: {x: along, y: thumbHeight - 6},
-            top: {x: along, y: 16},
-        }[edge];
-        const box = [at.x, at.y - 12, at.x + width, at.y + 2];
-        if (clear(box)) {
-            add('text', {...at, class: 'grid-label'}, text);
-            gridLabels.push(box);
-        }
-    };
-    const lines = [];
-    for (let dec = Math.ceil(decMin / decStep) * decStep; dec <= decMax; dec += decStep) {
-        const points = [];
-        for (let i = 0; i <= samples; i++) points.push(project(raCenter + raMin + (raMax - raMin) * i / samples, dec));
-        lines.push([points, ['left', 'right'], dmsLabel(dec, decStep)]);
-    }
-    for (let dra = Math.ceil((raCenter + raMin) / raStep) * raStep - raCenter; dra <= raMax; dra += raStep) {
-        const points = [];
-        for (let i = 0; i <= samples; i++) points.push(project(raCenter + dra, decMin + (decMax - decMin) * i / samples));
-        lines.push([points, ['bottom', 'top'], hmsLabel(((raCenter + dra) % 360 + 360) % 360, raStep)]);
-    }
-    add('path', {d: lines.map(([points]) => path(points)).join(''), class: 'grid'});
-    for (const line of lines) label(...line);
-
-    // the deep sky objects, the most prominent first, as they come: their outlines, from their sizes
-    // and position angles, with their labels. An object is shown only where its label has room,
-    // covering neither other labels nor markers: an outline without a name is noise
-    const taken = [compass];
-    const overlaps = box => taken.some(t => intersects(box, t));
-    const free = box => box[0] >= 0 && box[2] <= thumbWidth && box[1] >= 0 && box[3] <= thumbHeight && !overlaps(box);
-    let lynds = 0;
-    let enclosing = 0;
-    // the large outlines which are drawn: centers and radii
-    const outlines = [];
-    // tells if the image is in the ellipse of an object, from the positions of its corners on the sky
-    const encloses = (o, a, b, angle) => a > 0 && [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]].every(([x, y]) => {
-        const [ra, dec] = projection.toSky(x, y);
-        const east = ((ra - o.ra + 540) % 360 - 180) * Math.cos(o.dec * Math.PI / 180);
-        const north = dec - o.dec;
-        // in the axes of the ellipse: the major one is at the position angle, east of north
-        const u = north * Math.cos(angle) + east * Math.sin(angle);
-        const v = east * Math.cos(angle) - north * Math.sin(angle);
-        return (u / a) ** 2 + (v / b) ** 2 <= 1;
-    });
-    // the label of an object which the image is in, on the edge which faces its center, with an
-    // arrow towards it: where the line from the center of the image to the one of the object leaves
-    // the image, less the size of the label, or else further along that edge, clear of the labels of
-    // the grid. Returns false when the edge has no room
-    const edgeLabel = (name, target) => {
-        const [cx, cy] = [thumbWidth / 2, thumbHeight / 2];
-        const [dx, dy] = [target[0] - cx, target[1] - cy];
-        const arrow = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'][(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
-        const text = `${name} ${arrow}`;
-        const [w, h, margin] = [labelWidth(text), 17, 6];
-        const tx = Math.max(0, cx - margin - w / 2) / Math.abs(dx || 1e-9);
-        const ty = Math.max(0, cy - margin - h / 2) / Math.abs(dy || 1e-9);
-        const t = Math.min(tx, ty);
-        const [x, y] = [cx + dx * t, cy + dy * t];
-        // along the top or the bottom edge, or along a side
-        const [sx, sy] = ty <= tx ? [1, 0] : [0, 1];
-        for (const shift of [0, -1, 1, -2, 2, -3, 3].map(k => k * 40)) {
-            const box = [x + sx * shift - w / 2, y + sy * shift - h / 2, x + sx * shift + w / 2, y + sy * shift + h / 2];
-            if (free(box) && !gridLabels.some(g => intersects(box, g))) {
-                add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, text);
-                taken.push(box);
-                return true;
-            }
-        }
-        return false;
-    };
-    for (const o of (data.objects || []).slice(0, 60)) {
-        // the catalogs of Lynds cut complexes into many pieces, with generous extents: a few are enough
-        const fromLynds = /^L[BD]N /.test(o.name);
-        if (fromLynds && lynds >= MAX_LYNDS_OBJECTS) continue;
-        // the position computed by the server, which is exact: the inverse polynomials of the
-        // distortion are approximations, which drift on the edges of very wide fields
-        const center = toThumb([o.x, o.y]);
-        const projected = project(o.ra, o.dec);
-        if (!projected) continue;
-        // an object whose orientation isn't known is a circle of the same area: an ellipse would have to
-        // point somewhere, and a circle of its major axis would be much larger than the object
-        const oriented = o.angle !== undefined && o.angle !== null;
-        const major = (o.majorArcmin || 0) / 120;
-        const minor = (o.minorArcmin || o.majorArcmin || 0) / 120;
-        const a = oriented ? major : Math.sqrt(major * minor);
-        const b = oriented ? minor : a;
-        const angle = oriented ? o.angle * Math.PI / 180 : 0;
-        if (!inside(center)) {
-            // an object which the whole image is in, such as the nebula of a close-up: none of its outline
-            // is in the image, and its label is on the edge which faces its center
-            if (enclosing < MAX_ENCLOSING_OBJECTS && encloses(o, a, b, angle) && edgeLabel(o.label, center)) {
-                enclosing++;
-                if (fromLynds) {
-                    lynds++;
-                }
-            }
-            continue;
-        }
-        const shift = p => p && [p[0] + center[0] - projected[0], p[1] + center[1] - projected[1]];
-        const outline = [];
-        for (let i = 0; i <= 48 && a > 0; i++) {
-            const t = 2 * Math.PI * i / 48;
-            const north = a * Math.cos(t) * Math.cos(angle) - b * Math.sin(t) * Math.sin(angle);
-            const east = a * Math.cos(t) * Math.sin(angle) + b * Math.sin(t) * Math.cos(angle);
-            outline.push(shift(project(o.ra + east / Math.cos(o.dec * Math.PI / 180), o.dec + north)));
-        }
-        const extent = outline.filter(p => p).reduce((m, p) => Math.max(m, Math.hypot(p[0] - center[0], p[1] - center[1])), 0);
-        // a small object is its marker, which must be free; the outline of a large one can have labels inside
-        const radius = Math.max(extent, 6);
-        // the catalogs of Lynds cut complexes into pieces, with generous extents: the large outlines of
-        // the pieces of a complex whose outline is drawn already, or of the same one, would pile up
-        if (fromLynds && radius >= LABELS_INSIDE
-            && outlines.some(([c, r]) => Math.hypot(c[0] - center[0], c[1] - center[1]) < r + radius)) continue;
-        const marker = [center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius];
-        if (radius < LABELS_INSIDE && overlaps(marker)) continue;
-        // inside the outlines which are large enough, as a label next to a large outline is next to
-        // other objects too; next to the marker otherwise
-        const width = labelWidth(o.label);
-        const at = (x, y) => [x, y - 13, x + width, y + 4];
-        const candidates = radius >= LABELS_INSIDE
-            ? [at(center[0] - width / 2, center[1] + 5), at(center[0] - width / 2, center[1] + 24), at(center[0] - width / 2, center[1] - 14)]
-            : [at(center[0] + radius + 4, center[1] + 5), at(center[0] - radius - 4 - width, center[1] + 5),
-                at(center[0] - width / 2, center[1] + radius + 17), at(center[0] - width / 2, center[1] - radius - 6)];
-        const box = candidates.find(free);
-        if (!box) continue;
-        if (extent >= 6) {
-            add('path', {d: path(outline) + 'Z', class: 'object'});
-        } else {
-            add('circle', {cx: center[0], cy: center[1], r: 6, class: 'object'});
-        }
-        add('text', {x: box[0], y: box[3] - 4, class: 'object-label'}, o.label);
-        taken.push(box);
-        if (radius >= LABELS_INSIDE) {
-            outlines.push([center, radius]);
-        }
-        if (radius < LABELS_INSIDE) {
-            taken.push(marker);
-        }
-        if (fromLynds) {
-            lynds++;
-        }
-    }
-
-    // the compass, in the corner without labels: the directions of north and east at the center of the image
-    const step = diagonal / 20;
-    const origin = project(raCenter, decCenter);
-    const north = project(raCenter, Math.min(90, decCenter + step));
-    const east = project(raCenter + step / Math.max(0.01, Math.cos(decCenter * Math.PI / 180)), decCenter);
-    if (origin && north && east) {
-        const corner = [(compass[0] + compass[2]) / 2, (compass[1] + compass[3]) / 2];
-        const arrow = (to, name) => {
-            const dx = to[0] - origin[0], dy = to[1] - origin[1];
-            const length = Math.hypot(dx, dy) || 1;
-            const tip = [corner[0] + 32 * dx / length, corner[1] + 32 * dy / length];
-            add('line', {x1: corner[0], y1: corner[1], x2: tip[0], y2: tip[1], class: 'compass'});
-            add('text', {x: corner[0] + 44 * dx / length, y: corner[1] + 44 * dy / length + 5, class: 'compass-label'}, name);
-        };
-        arrow(north, 'N');
-        arrow(east, 'E');
-    }
-    return svg;
-}
 
 /** A declination of the grid: "+33°", "+33° 10′". */
 function dmsLabel(dec, step) {
@@ -786,6 +448,7 @@ function resultView(data) {
         return views;
     }
     views.push(element('div', `Solved in ${time}`, 'status ok'));
+    views.push(skyView(data));
     views.push(objectsView(data.objects || []));
     const metrics = element('div', undefined, 'metrics');
     const metric = (label, value) => {

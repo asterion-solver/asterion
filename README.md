@@ -223,9 +223,11 @@ the name of its constellation, and the stars of the catalog around it, the ones 
 circled. The constellation lines are those of [Marc van der Sluys](https://github.com/MarcvdSluys/ConstellationLines)
 (CC BY 4.0), see [the credits of the sky data](asterion-web/third-party/sky-data.md).
 
-The result shows a thumbnail of the image, made by the browser, or by the server for the formats which
-browsers can't display, such as FITS files, once the image is solved. Hovering over it, or clicking it, shows
-the grid of coordinates, the directions of north and east, and the outlines of the deep sky objects.
+A solution is shown on a view of the sky: the image where it is, upright as it was taken or north up, with
+the grid of coordinates, the directions of north and east, the constellations and the outlines of the deep sky
+objects around it, which can be moved and zoomed with the mouse, a finger or its buttons. The picture of the
+image is made by the browser, or by the server for the formats which browsers can't display, such as FITS
+files. The view can be saved as a JPEG image, as it is, where the image keeps its resolution.
 
 When the web interface runs from the archive, next to `asterion`, it offers to install the `astap` executable of
 the [ASTAP compatibility mode](#astap-compatibility-mode) there, for the programs which call ASTAP.
@@ -249,6 +251,7 @@ Its API is what the page uses, which other programs can call too. Its definition
 | `GET /api/astap`, `POST /api/astap` | whether the ASTAP compatible executable can be installed next to `asterion`, and installs it |
 | `GET /api/openapi.yaml` | the definition of the API |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
+| `GET /api/objects?ra=…&dec=…&radius=…&count=…` | the most prominent deep sky objects in a cone of up to 90°, described as the ones of a solution, and their number in the cone |
 
 ## PixInsight and Siril
 

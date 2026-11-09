@@ -88,6 +88,8 @@ class WebServerTest {
         assertTrue(page.headers().firstValue("Content-Type").orElseThrow().startsWith("text/html"));
         assertTrue(page.body().contains("<title>Asterion Solver</title>"));
         assertEquals(200, get("/app.js").statusCode());
+        assertEquals(200, get("/charts.js").statusCode());
+        assertEquals(200, get("/skyview.js").statusCode());
         assertEquals(200, get("/style.css").statusCode());
         var sky = get("/sky.json");
         assertEquals(200, sky.statusCode());
@@ -274,6 +276,26 @@ class WebServerTest {
         assertEquals(400, get("/api/stars?ra=10&dec=20").statusCode());
         assertEquals(400, get("/api/stars?ra=10&dec=20&radius=45").statusCode());
         assertEquals(400, get("/api/stars?ra=10&dec=20&radius=5&catalog=gaia-500").statusCode());
+    }
+
+    @Test
+    void listsTheDeepSkyObjectsAroundAPosition() throws Exception {
+        // around M 31, without any catalog
+        var response = get("/api/objects?ra=10.68&dec=41.27&radius=1&count=3");
+        assertEquals(200, response.statusCode(), response.body());
+        var body = response.body();
+        var total = Integer.parseInt(body.replaceAll("^\\{\"total\":(\\d+),.*", "$1"));
+        assertTrue(total > 3, body);
+        // the most prominent first, as the objects of solutions, without positions in an image
+        assertTrue(body.contains("\"objects\":[{\"name\":\"M 31\",\"label\":\"M 31 (Andromeda Galaxy)\""), body);
+        assertEquals(3, body.split("\"designation\"").length - 1, body);
+        assertFalse(body.contains("\"x\":"), body);
+
+        // the sky view zooms out further than the star charts
+        assertEquals(200, get("/api/objects?ra=10.68&dec=41.27&radius=60").statusCode());
+        assertEquals(400, get("/api/objects?ra=10.68&dec=41.27").statusCode());
+        assertEquals(400, get("/api/objects?ra=10.68&dec=41.27&radius=100").statusCode());
+        assertEquals(400, get("/api/objects?ra=10.68&dec=95&radius=1").statusCode());
     }
 
     private static double[] vector(double raDeg, double decDeg) {

@@ -30,14 +30,26 @@ function angle(a, b) {
     return Math.acos(Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])) / RAD;
 }
 
-/** A stereographic projection of the sky in a disc of the given radius, in degrees. */
+/**
+ * A stereographic projection of the sky in a chart of the given size, in pixels: the radius, in degrees, is
+ * the one of the largest disc the chart contains, and the reach the distance from its center to its farthest
+ * point, its corners for a rectangular chart. North is up and east left, unless an orientation turns or
+ * mirrors the chart: an orthonormal matrix [a, b, c, d], from the offsets of the chart north up to the ones
+ * on the screen, x' = a x + b y and y' = c x + d y.
+ */
 class Projection {
-    constructor(ra, dec, radius) {
+    constructor(ra, dec, radius, width = SIZE, height = SIZE, reach = radius, orientation = [1, 0, 0, 1]) {
+        this.orientation = orientation;
         this.ra = ra * RAD;
         this.sinDec = Math.sin(dec * RAD);
         this.cosDec = Math.cos(dec * RAD);
         this.radius = radius;
-        this.scale = (SIZE / 2 - 4) / (2 * Math.tan(radius * RAD / 2));
+        this.reach = reach;
+        this.width = width;
+        this.height = height;
+        this.cx = width / 2;
+        this.cy = height / 2;
+        this.scale = (Math.min(width, height) / 2 - 4) / (2 * Math.tan(radius * RAD / 2));
     }
 
     /** Projects a position, or returns null when it's far behind the edge of the chart. */
@@ -46,9 +58,28 @@ class Projection {
         const sinDec = Math.sin(dec * RAD);
         const cosDec = Math.cos(dec * RAD);
         const cosC = this.sinDec * sinDec + this.cosDec * cosDec * Math.cos(d);
-        if (cosC < Math.cos(Math.min(170, 1.6 * this.radius) * RAD)) return null;
+        if (cosC < Math.cos(Math.min(170, 1.6 * this.reach) * RAD)) return null;
         const k = this.scale * 2 / (1 + cosC);
-        return [SIZE / 2 - k * cosDec * Math.sin(d), SIZE / 2 - k * (this.cosDec * sinDec - this.sinDec * cosDec * Math.cos(d))];
+        const x = -k * cosDec * Math.sin(d);
+        const y = -k * (this.cosDec * sinDec - this.sinDec * cosDec * Math.cos(d));
+        const [m11, m12, m21, m22] = this.orientation;
+        return [this.cx + m11 * x + m12 * y, this.cy + m21 * x + m22 * y];
+    }
+
+    /** The position of a point of the chart, in degrees. */
+    unproject(x, y) {
+        // the inverse of an orthonormal matrix is its transpose
+        const [m11, m12, m21, m22] = this.orientation;
+        const [dx, dy] = [x - this.cx, y - this.cy];
+        const u = -(m11 * dx + m21 * dy) / this.scale;
+        const v = -(m12 * dx + m22 * dy) / this.scale;
+        const rho = Math.hypot(u, v);
+        const dec0 = Math.asin(this.sinDec);
+        if (rho === 0) return [this.ra / RAD, dec0 / RAD];
+        const c = 2 * Math.atan(rho / 2);
+        const dec = Math.asin(Math.cos(c) * this.sinDec + v * Math.sin(c) * this.cosDec / rho);
+        const ra = this.ra + Math.atan2(u * Math.sin(c), rho * this.cosDec * Math.cos(c) - v * this.sinDec * Math.sin(c));
+        return [((ra / RAD) % 360 + 360) % 360, dec / RAD];
     }
 
     /**
@@ -58,13 +89,16 @@ class Projection {
     path(points, closed, step = 2) {
         step = Math.min(step, this.radius / 8);
         const center = vector(this.ra / RAD, Math.asin(this.sinDec) / RAD);
-        const limit = 1.6 * this.radius;
+        const limit = 1.6 * this.reach;
         let path = '';
         let previous = null;
+        // a path which leaves the chart is in pieces, which closing would join with a straight line
+        let broken = false;
         const move = (ra, dec) => {
             const p = this.project(ra, dec);
             if (p === null) {
                 previous = null;
+                broken = true;
                 return;
             }
             path += (previous === null ? 'M' : 'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1);
@@ -91,7 +125,7 @@ class Projection {
             move(ra, dec);
             a = b;
         }
-        return path + (closed && path ? 'Z' : '');
+        return path + (closed && path && !broken ? 'Z' : '');
     }
 }
 
@@ -121,7 +155,7 @@ function drawGrid(content, projection) {
     const raStep = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 45, 90].find(s => s >= step / Math.max(projection.cosDec, 0.01)) || 90;
     const center = Math.asin(projection.sinDec) / RAD;
     for (let dec = -90 + step; dec < 90; dec += step) {
-        if (Math.abs(dec - center) > 1.6 * projection.radius + step) continue;
+        if (Math.abs(dec - center) > 1.6 * projection.reach + step) continue;
         const points = [];
         for (let ra = 0; ra < 360; ra += 1) points.push(ra, dec);
         lines.push(projection.path(points, true, 1));
@@ -132,7 +166,11 @@ function drawGrid(content, projection) {
     content.append(svgElement('path', {d: lines.join(''), class: 'sky-grid'}));
 }
 
-function drawConstellations(content, projection, data, current, labels) {
+/**
+ * The boundaries and the figures of the constellations, and their names when labels is true, at the middle of
+ * their figures, where far enough from the edge of the chart: a disc, or the rectangle of the projection.
+ */
+function drawConstellations(content, projection, data, current, labels, rectangular = false) {
     const boundaries = data.boundaries.map(b => projection.path(b.slice(1), false, 1));
     content.append(svgElement('path', {d: boundaries.join(''), class: 'sky-boundary'}));
     const own = data.boundaries.filter(b => b[0] === current).map(b => projection.path(b.slice(1), false, 1));
@@ -153,7 +191,11 @@ function drawConstellations(content, projection, data, current, labels) {
     }
     for (const [abbreviation, v] of centers) {
         const p = projection.project(Math.atan2(v[1], v[0]) / RAD, Math.atan2(v[2], Math.hypot(v[0], v[1])) / RAD);
-        if (p === null || Math.hypot(p[0] - SIZE / 2, p[1] - SIZE / 2) > SIZE / 2 - 40) continue;
+        if (p === null) continue;
+        const inside = rectangular
+            ? p[0] > 40 && p[0] < projection.width - 40 && p[1] > 20 && p[1] < projection.height - 20
+            : Math.hypot(p[0] - projection.cx, p[1] - projection.cy) <= Math.min(projection.cx, projection.cy) - 40;
+        if (!inside) continue;
         content.append(svgElement('text', {x: p[0], y: p[1], class: abbreviation === current ? 'sky-label current' : 'sky-label'},
             data.names[abbreviation]));
     }

@@ -15,6 +15,7 @@
  */
 package me.champeau.asterion.catalog;
 
+import me.champeau.asterion.math.Sphere;
 import me.champeau.asterion.wcs.Wcs;
 
 import java.io.IOException;
@@ -24,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
+import java.util.function.ToDoubleFunction;
 
 /**
  * The deep sky objects of the Messier, NGC and IC catalogs, of the catalogs of HII regions of
@@ -143,12 +146,18 @@ public final class DeepSkyObjects {
             double distanceDeg) {
     }
 
-    /** Messier objects, then named ones, then the others, by catalog, the most famous first, then the largest and the brightest. */
-    private static final Comparator<InField> PROMINENCE = Comparator.comparingInt((InField f) -> f.object().tier())
-            .thenComparing(f -> f.object().catalog())
-            .thenComparing(f -> f.object().majorArcmin(), (a, b) -> Double.compare(nanLast(b), nanLast(a)))
-            .thenComparing(f -> f.object().magnitude(), (a, b) -> Double.compare(nanLast(a), nanLast(b)))
-            .thenComparingDouble(InField::distanceDeg);
+    /**
+     * An object around a position of the sky.
+     *
+     * @param distanceDeg the angular distance between its center and the position
+     */
+    public record Nearby(
+            DeepSkyObject object,
+            double distanceDeg) {
+    }
+
+    private static final Comparator<InField> IN_FIELD = prominence(InField::object, InField::distanceDeg);
+    private static final Comparator<Nearby> NEARBY = prominence(Nearby::object, Nearby::distanceDeg);
 
     /**
      * The table, parsed when the class is initialized: at build time in native images, where it
@@ -249,8 +258,49 @@ public final class DeepSkyObjects {
                 found.add(new InField(table.object(i), pixel[0], pixel[1], Math.toDegrees(Math.acos(Math.min(1, dot)))));
             }
         }
-        found.sort(PROMINENCE);
+        found.sort(IN_FIELD);
         return found;
+    }
+
+    /**
+     * The objects around a position, the most prominent first, as {@link #inField}: the ones whose center is in a disc
+     * of the sky, or whose size reaches into it.
+     *
+     * @param raDeg the right ascension of the center of the disc, J2000, in degrees
+     * @param decDeg the declination of the center of the disc
+     * @param radiusDeg the radius of the disc, in degrees
+     */
+    public static List<Nearby> around(double raDeg, double decDeg, double radiusDeg) {
+        var table = TABLE;
+        var center = new double[3];
+        Sphere.toVector(Math.toRadians(raDeg), Math.toRadians(decDeg), center);
+        var minDot = Math.cos(Math.toRadians(Math.min(180, radiusDeg + table.largestDeg / 2)));
+        var found = new ArrayList<Nearby>();
+        var numbers = table.numbers;
+        for (var i = 0; i < table.count; i++) {
+            var n = NUMBERS * i;
+            var dot = numbers[n + 2] * center[0] + numbers[n + 3] * center[1] + numbers[n + 4] * center[2];
+            if (dot < minDot) {
+                continue;
+            }
+            var distance = Math.toDegrees(Math.acos(Math.min(1, dot)));
+            var major = numbers[n + 5];
+            var reach = Float.isNaN(major) ? 0 : major / 60 / 2;
+            if (distance <= radiusDeg + reach) {
+                found.add(new Nearby(table.object(i), distance));
+            }
+        }
+        found.sort(NEARBY);
+        return found;
+    }
+
+    /** Messier objects, then named ones, then the others, by catalog, the most famous first, then the largest and the brightest. */
+    private static <T> Comparator<T> prominence(Function<T, DeepSkyObject> object, ToDoubleFunction<T> distanceDeg) {
+        return Comparator.comparingInt((T t) -> object.apply(t).tier())
+                .thenComparing(t -> object.apply(t).catalog())
+                .thenComparing(t -> object.apply(t).majorArcmin(), (a, b) -> Double.compare(nanLast(b), nanLast(a)))
+                .thenComparing(t -> object.apply(t).magnitude(), (a, b) -> Double.compare(nanLast(a), nanLast(b)))
+                .thenComparingDouble(distanceDeg);
     }
 
     private static double round(float value, double scale) {

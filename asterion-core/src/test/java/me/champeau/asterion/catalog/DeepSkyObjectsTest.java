@@ -127,4 +127,28 @@ class DeepSkyObjectsTest {
         var pole = SyntheticSky.wcs(200, 200, 0, -89.9, 1, 0, false);
         assertTrue(DeepSkyObjects.inField(pole, 200, 200).isEmpty());
     }
+
+    @Test
+    void findsTheObjectsAroundAPosition() {
+        // around M 31: the Messier objects first, the largest first, as in images
+        var around = DeepSkyObjects.around(10.68, 41.27, 1);
+        var names = around.stream().map(n -> n.object().name()).toList();
+        assertEquals(List.of("M 31", "M 110", "M 32"), names.subList(0, 3), names.toString());
+        assertTrue(around.getFirst().distanceDeg() < 0.01, "M 31 at " + around.getFirst().distanceDeg() + "°");
+        for (var nearby : around) {
+            var o = nearby.object();
+            var reach = Double.isNaN(o.majorArcmin()) ? 0 : o.majorArcmin() / 120;
+            assertTrue(nearby.distanceDeg() <= 1 + reach, o.name() + " at " + nearby.distanceDeg() + "°");
+        }
+
+        // an object whose center is outside of the disc, but whose size reaches into it: M 31 is 3° long
+        var edge = DeepSkyObjects.around(10.68, 42.6, 0.1).stream().map(n -> n.object().name()).toList();
+        assertTrue(edge.contains("M 31"), edge.toString());
+        assertFalse(DeepSkyObjects.around(10.68, 44, 0.1).stream().anyMatch(n -> n.object().name().equals("M 31")));
+
+        // a larger disc has the objects of a smaller one, and others: M 33 is 15° away
+        var wider = DeepSkyObjects.around(10.68, 41.27, 16).stream().map(n -> n.object().name()).toList();
+        assertTrue(wider.containsAll(names));
+        assertTrue(wider.contains("M 33"), wider.toString());
+    }
 }
