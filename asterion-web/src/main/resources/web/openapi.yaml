@@ -299,6 +299,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/objects:
+    get:
+      tags: [solving]
+      operationId: objects
+      summary: The deep sky objects around a position
+      description: |
+        The objects which the sky view of the page draws, the most prominent first: Messier objects, then the ones
+        with a common name, then the others, the largest and brightest first. An object is around the position when
+        its center is in the disc, or when its size reaches into it.
+      parameters:
+        - name: ra
+          in: query
+          required: true
+          description: The right ascension of the center of the disc, in degrees.
+          schema:
+            type: number
+            format: double
+        - name: dec
+          in: query
+          required: true
+          description: The declination of the center of the disc, in degrees.
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: radius
+          in: query
+          required: true
+          description: The radius of the disc, in degrees.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: 0
+            maximum: 90
+        - name: count
+          in: query
+          description: The most objects to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 200
+      responses:
+        "200":
+          description: The objects.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Objects"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
   /api/catalogs:
     get:
       tags: [catalogs]
@@ -602,7 +654,7 @@ components:
           type: array
           description: The deep sky objects of the image, the most prominent first.
           items:
-            $ref: "#/components/schemas/DeepSkyObject"
+            $ref: "#/components/schemas/ObjectOfImage"
         matches:
           type: array
           description: The positions of the matched stars of the catalog.
@@ -628,7 +680,7 @@ components:
         An object of the Messier, NGC and IC catalogs, of OpenNGC, or of the catalogs of nebulae of
         Sharpless, van den Bergh and Lynds. An object which several catalogs list has the designation of the most
         famous one, and the others as aliases. The fields which aren't known are left out.
-      required: [name, label, designation, type, ra, dec, x, y, distance]
+      required: [name, label, designation, type, ra, dec, distance]
       properties:
         name:
           type: string
@@ -664,18 +716,10 @@ components:
           type: number
           format: double
           description: The declination of the center of the object, in degrees, J2000.
-        x:
-          type: number
-          format: double
-          description: The abscissa of the center of the object in the image, in pixels, from 0, possibly outside of the image.
-        y:
-          type: number
-          format: double
-          description: The ordinate of the center of the object in the image, in pixels, from 0.
         distance:
           type: number
           format: double
-          description: The distance between the object and the center of the image, in degrees.
+          description: The distance between the object and the center of the image, or of the disc it was searched in, in degrees.
         majorArcmin:
           type: number
           format: double
@@ -692,6 +736,32 @@ components:
           type: number
           format: double
           description: The visual magnitude, or the blue one.
+    ObjectOfImage:
+      description: A deep sky object of an image, with the position of its center in the image.
+      allOf:
+        - $ref: "#/components/schemas/DeepSkyObject"
+        - type: object
+          required: [x, y]
+          properties:
+            x:
+              type: number
+              format: double
+              description: The abscissa of the center of the object in the image, in pixels, from 0, possibly outside of the image.
+            y:
+              type: number
+              format: double
+              description: The ordinate of the center of the object in the image, in pixels, from 0.
+    Objects:
+      type: object
+      required: [total, objects]
+      properties:
+        total:
+          type: integer
+          description: The number of objects around the position, of which the most prominent are returned.
+        objects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeepSkyObject"
     Catalogs:
       type: object
       required: [directory, installed, available, installations, version]

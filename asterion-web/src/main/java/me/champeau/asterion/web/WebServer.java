@@ -19,8 +19,10 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import me.champeau.asterion.catalog.Catalogs;
+import me.champeau.asterion.catalog.DeepSkyObjects;
 import me.champeau.asterion.image.ImageLoader;
 import me.champeau.asterion.solver.SolutionFiles;
+import me.champeau.asterion.solver.SolutionJson;
 import me.champeau.asterion.solver.SolveResult;
 
 import java.io.FilterInputStream;
@@ -53,15 +55,18 @@ public final class WebServer implements AutoCloseable {
     private static final long MAX_UPLOAD_BYTES = 2L << 30;
     /** The port the server listens on, unless another one is given on the command line or saved from the interface. */
     private static final int DEFAULT_PORT = 7531;
-    /** The width of the thumbnails which are made here, see {@link #thumbnail}: the ones made by browsers have the same. */
+    /** The width of the thumbnails which are made here, see {@link #thumbnail}: browsers make larger ones when they can. */
     private static final int THUMBNAIL_WIDTH = 800;
-    /** The largest radius of charts: they show the stars of a catalog around a solution. */
+    /** The largest radius of the charts of the stars of a catalog around a solution. */
     private static final double MAX_CHART_RADIUS_DEG = 30;
+    /** The largest radius of the charts of the deep sky objects around a solution, which the page can zoom out to. */
+    private static final double MAX_OBJECTS_RADIUS_DEG = 90;
     private static final Map<String, String> STATIC_FILES = Map.of(
             "/", "index.html",
             "/index.html", "index.html",
             "/app.js", "app.js",
             "/charts.js", "charts.js",
+            "/skyview.js", "skyview.js",
             "/style.css", "style.css",
             "/sky.json", "sky.json",
             "/api/openapi.yaml", "openapi.yaml");
@@ -130,6 +135,7 @@ public final class WebServer implements AutoCloseable {
         routes.put("/api/enable", this::enable);
         routes.put("/api/solve", this::solve);
         routes.put("/api/stars", this::stars);
+        routes.put("/api/objects", WebServer::objects);
         routes.put("/api/download", this::download);
         routes.put("/api/thumbnail", this::thumbnail);
         routes.put("/api/astap", WebServer::astap);
@@ -284,14 +290,39 @@ public final class WebServer implements AutoCloseable {
     private void stars(HttpExchange exchange) throws IOException {
         expect(exchange, "GET");
         var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
-        var ra = request.number("ra", Double.NaN);
-        var dec = request.number("dec", Double.NaN);
-        var radius = request.number("radius", Double.NaN);
-        if (Double.isNaN(ra) || Double.isNaN(dec) || Math.abs(dec) > 90 || !(radius > 0 && radius <= MAX_CHART_RADIUS_DEG)) {
-            throw new IllegalArgumentException("ra, dec and radius (up to " + MAX_CHART_RADIUS_DEG + "°) are required");
-        }
+        var disc = Disc.of(request, MAX_CHART_RADIUS_DEG);
         var count = (int) Math.clamp(request.number("count", 2000), 1, 20000);
-        send(exchange, 200, catalogs.stars(request.parameter("catalog"), ra, dec, radius, count));
+        send(exchange, 200, catalogs.stars(request.parameter("catalog"), disc.raDeg(), disc.decDeg(), disc.radiusDeg(), count));
+    }
+
+    /** The deep sky objects around a position, the most prominent first, for charts. */
+    private static void objects(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        var request = SolveRequest.parse(exchange.getRequestURI().getRawQuery());
+        var disc = Disc.of(request, MAX_OBJECTS_RADIUS_DEG);
+        var count = (int) Math.clamp(request.number("count", 200), 1, 5000);
+        var around = DeepSkyObjects.around(disc.raDeg(), disc.decDeg(), disc.radiusDeg());
+        var objects = Json.array();
+        for (var nearby : around.subList(0, Math.min(count, around.size()))) {
+            objects.add(Json.extend(SolutionJson.deepSkyObject(nearby.object(), Double.NaN, Double.NaN, nearby.distanceDeg())));
+        }
+        send(exchange, 200, Json.object().field("total", around.size()).field("objects", objects));
+    }
+
+    /** The disc of the sky which a chart shows, from the parameters of a request: ra, dec and radius, in degrees. */
+    private record Disc(
+            double raDeg,
+            double decDeg,
+            double radiusDeg) {
+        static Disc of(SolveRequest request, double maxRadiusDeg) {
+            var ra = request.number("ra", Double.NaN);
+            var dec = request.number("dec", Double.NaN);
+            var radius = request.number("radius", Double.NaN);
+            if (Double.isNaN(ra) || Double.isNaN(dec) || Math.abs(dec) > 90 || !(radius > 0 && radius <= maxRadiusDeg)) {
+                throw new IllegalArgumentException("ra, dec and radius (up to " + maxRadiusDeg + "°) are required");
+            }
+            return new Disc(ra, dec, radius);
+        }
     }
 
     /**
