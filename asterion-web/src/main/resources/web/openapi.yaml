@@ -351,6 +351,33 @@ paths:
                 $ref: "#/components/schemas/Objects"
         "400":
           $ref: "#/components/responses/InvalidRequest"
+  /api/opened:
+    get:
+      tags: [solving]
+      operationId: opened
+      summary: The image given on the command line
+      description: |
+        The image which the web interface was started with, such as the one dropped on its icon on Windows, which
+        the page solves as if it was chosen there.
+      responses:
+        "200":
+          description: The content of the image, with the media type of its extension when it's known.
+          headers:
+            Asterion-File-Name:
+              description: The name of the file, encoded as the components of URLs.
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No image was given on the command line.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/catalogs:
     get:
       tags: [catalogs]

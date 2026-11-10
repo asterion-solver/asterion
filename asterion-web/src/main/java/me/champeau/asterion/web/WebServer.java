@@ -32,6 +32,8 @@ import java.io.OutputStream;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLConnection;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,6 +84,8 @@ public final class WebServer implements AutoCloseable {
     private final Preferences preferences;
     /** True when the port was given on the command line, which wins over the one of the preferences. */
     private final boolean portFromCommandLine;
+    /** The image given on the command line, which the page solves when it's opened at {@link #openedUri()}, or null. */
+    private volatile Path opened;
 
     private WebServer(HttpServer server, CatalogService catalogs, SolvedImages solved, Preferences preferences,
                       boolean portFromCommandLine) {
@@ -119,6 +123,19 @@ public final class WebServer implements AutoCloseable {
         return web;
     }
 
+    /**
+     * Offers an image to the page, such as the one dropped on the icon of the program, which Windows gives on its
+     * command line: the page solves it when it's opened at {@link #openedUri()}.
+     */
+    public void open(Path image) {
+        opened = image;
+    }
+
+    /** The address of the interface which solves the image given to {@link #open}. */
+    public URI openedUri() {
+        return uri().resolve("?opened");
+    }
+
     /** The solved images which are kept, for downloads and thumbnails. */
     SolvedImages solvedImages() {
         return solved;
@@ -136,6 +153,7 @@ public final class WebServer implements AutoCloseable {
         routes.put("/api/solve", this::solve);
         routes.put("/api/stars", this::stars);
         routes.put("/api/objects", WebServer::objects);
+        routes.put("/api/opened", this::opened);
         routes.put("/api/download", this::download);
         routes.put("/api/thumbnail", this::thumbnail);
         routes.put("/api/astap", WebServer::astap);
@@ -307,6 +325,24 @@ public final class WebServer implements AutoCloseable {
             objects.add(Json.extend(SolutionJson.deepSkyObject(nearby.object(), Double.NaN, Double.NaN, nearby.distanceDeg())));
         }
         send(exchange, 200, Json.object().field("total", around.size()).field("objects", objects));
+    }
+
+    /** The image given on the command line, which the page uploads as if it was chosen there. */
+    private void opened(HttpExchange exchange) throws IOException {
+        expect(exchange, "GET");
+        var image = opened;
+        if (image == null) {
+            throw new NoSuchElementException("No image was given on the command line");
+        }
+        var type = URLConnection.guessContentTypeFromName(image.getFileName().toString());
+        exchange.getResponseHeaders().set("Content-Type", type != null ? type : "application/octet-stream");
+        // the name of the file, encoded as the components of URLs
+        exchange.getResponseHeaders().set("Asterion-File-Name",
+                URLEncoder.encode(image.getFileName().toString(), StandardCharsets.UTF_8).replace("+", "%20"));
+        exchange.sendResponseHeaders(200, Files.size(image));
+        try (var out = exchange.getResponseBody()) {
+            Files.copy(image, out);
+        }
     }
 
     /** The disc of the sky which a chart shows, from the parameters of a request: ra, dec and radius, in degrees. */
@@ -517,6 +553,7 @@ public final class WebServer implements AutoCloseable {
         Integer port = null;
         var directory = Catalogs.defaultDirectory();
         var browser = true;
+        Path image = null;
         for (var i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--host" -> host = value(args, ++i);
@@ -532,9 +569,17 @@ public final class WebServer implements AutoCloseable {
                     return;
                 }
                 default -> {
-                    System.err.println("Unknown option " + args[i]);
-                    usage();
-                    System.exit(2);
+                    if (args[i].startsWith("-") || image != null) {
+                        System.err.println(args[i].startsWith("-") ? "Unknown option " + args[i] : "Only one image can be given");
+                        usage();
+                        System.exit(2);
+                    }
+                    // the image to solve, which Windows gives when it's dropped on the program
+                    image = Path.of(args[i]).toAbsolutePath();
+                    if (!Files.isRegularFile(image)) {
+                        System.err.println("No such image: " + image);
+                        System.exit(2);
+                    }
                 }
             }
         }
@@ -554,11 +599,14 @@ public final class WebServer implements AutoCloseable {
             return;
         }
         Runtime.getRuntime().addShutdownHook(new Thread(web::close));
-        System.out.println("Asterion Solver " + version() + ", web interface: " + web.uri());
+        web.open(image);
+        // the address which solves the image given on the command line, if any
+        var address = image == null ? web.uri() : web.openedUri();
+        System.out.println("Asterion Solver " + version() + ", web interface: " + address);
         // terminals open links on a modified click, if at all
         var click = System.getProperty("os.name", "").startsWith("Mac") ? "Cmd+click" : "Ctrl+click";
         var open = "click the address above (" + click + " in some terminals), or type it in a web browser";
-        if (browser && Browser.open(web.uri())) {
+        if (browser && Browser.open(address)) {
             System.out.println("Opening it in your browser. If it doesn't open, " + open);
         } else {
             System.out.println("To open it, " + open);
@@ -580,7 +628,9 @@ public final class WebServer implements AutoCloseable {
 
     private static void usage() {
         System.out.println("""
-                Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>] [--no-browser]
+                Usage: asterion-web [--host <address>] [--port <port>] [--catalog-dir <directory>] [--no-browser] [<image>]
+                  <image>                  an image to solve once the interface is open, such as the one dropped on the
+                                           program on Windows
                   --host <address>         the address to listen on (default: 127.0.0.1, this machine only)
                   --port <port>            the port to listen on (default: the one saved from the interface, or 7531; 0 for any free port)
                   --catalog-dir <dir>      the directory of the catalogs (default: $ASTERION_CATALOGS, or ~/.asterion/catalogs)

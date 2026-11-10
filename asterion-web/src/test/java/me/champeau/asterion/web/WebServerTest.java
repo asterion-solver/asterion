@@ -40,6 +40,7 @@ import java.util.SplittableRandom;
 import java.util.TreeSet;
 import javax.imageio.ImageIO;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -276,6 +277,22 @@ class WebServerTest {
         assertEquals(400, get("/api/stars?ra=10&dec=20").statusCode());
         assertEquals(400, get("/api/stars?ra=10&dec=20&radius=45").statusCode());
         assertEquals(400, get("/api/stars?ra=10&dec=20&radius=5&catalog=gaia-500").statusCode());
+    }
+
+    @Test
+    void servesTheImageGivenOnTheCommandLine(@TempDir Path directory) throws Exception {
+        assertEquals(404, get("/api/opened").statusCode());
+        var image = directory.resolve("M 31 été.jpg");
+        var content = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1, 2, 3};
+        Files.write(image, content);
+        server.open(image);
+        var response = get("/api/opened", HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, response.statusCode());
+        assertArrayEquals(content, response.body());
+        assertEquals("image/jpeg", response.headers().firstValue("Content-Type").orElseThrow());
+        // the name, as the page decodes it
+        assertEquals("M%2031%20%C3%A9t%C3%A9.jpg", response.headers().firstValue("Asterion-File-Name").orElseThrow());
+        assertEquals(server.uri().resolve("?opened"), server.openedUri());
     }
 
     @Test

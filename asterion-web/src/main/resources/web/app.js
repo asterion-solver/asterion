@@ -203,6 +203,29 @@ async function pickImage() {
 /** Counts the images chosen: the answer to a solve is only shown while its image is still the chosen one. */
 let selection = 0;
 
+/**
+ * Solves the image given to the web interface on its command line, such as the one dropped on its icon on
+ * Windows, as if it was chosen on the page: when the page is opened for it, once, as reloading it doesn't.
+ */
+async function solveOpened() {
+    if (!new URLSearchParams(location.search).has('opened')) return;
+    history.replaceState(null, '', location.pathname);
+    try {
+        const response = await fetch('api/opened');
+        if (!response.ok) throw new Error((await response.json()).error);
+        const name = decodeURIComponent(response.headers.get('Asterion-File-Name') || 'image');
+        const blob = await response.blob();
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([blob], name, {type: blob.type}));
+        $('file').files = transfer.files;
+    } catch (e) {
+        $('drop-text').textContent = `The image given to Asterion couldn't be read: ${e.message}`;
+        return;
+    }
+    showFile();
+    $('solve-form').requestSubmit();
+}
+
 function showFile() {
     const file = $('file').files[0];
     $('drop-text').textContent = file ? `${file.name} (${size(file.size)})` : 'Drop an image here, or click to choose one';
@@ -609,5 +632,6 @@ $('port-save').addEventListener('click', async () => {
 });
 
 loadCatalogs();
+solveOpened();
 loadAstap();
 loadSettings();
