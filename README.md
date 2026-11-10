@@ -214,6 +214,9 @@ of the catalogs. The port can also be chosen in the options of the page, which s
 the network, without any access control. An installed catalog can be disabled from the page, and enabled again:
 it stays on disk, but isn't used to solve, which is saved in the same file.
 
+An image can also be given on the command line, `asterion-web image.fits`: the interface opens in the browser
+and solves it. On Windows, this is what dropping an image on `asterion-web.exe`, or on a shortcut to it, does.
+
 In Chrome and Edge, the file picker opens in the directory of the last image you picked, from one session to
 the next; other browsers decide for themselves. That picker refuses symbolic links: the page then offers the
 standard dialog, which opens them. Dropping a file on the page works everywhere.
@@ -251,6 +254,7 @@ Its API is what the page uses, which other programs can call too. Its definition
 | `GET /api/astap`, `POST /api/astap` | whether the ASTAP compatible executable can be installed next to `asterion`, and installs it |
 | `GET /api/openapi.yaml` | the definition of the API |
 | `GET /api/stars?ra=…&dec=…&radius=…&catalog=…&count=…` | the brightest stars of a catalog in a cone of up to 30°, as (right ascension, declination, level), the level of the index telling their brightness |
+| `GET /api/opened` | the image given on the command line, which the page solves, its name in the `Asterion-File-Name` header |
 | `GET /api/objects?ra=…&dec=…&radius=…&count=…` | the most prominent deep sky objects in a cone of up to 90°, described as the ones of a solution, and their number in the cone |
 
 ## PixInsight and Siril
