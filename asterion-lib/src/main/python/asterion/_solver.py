@@ -239,6 +239,34 @@ class Result:
         return first.value, second.value
 
 
+class SolveCancelled(AsterionError):
+    """A solve was cancelled, see Cancellation."""
+
+
+SolveCancelled.__module__ = "asterion"
+
+
+class Cancellation:
+    """
+    Cancels solves from another thread: a solve given a cancellation stops as soon as it can once it's cancelled, and
+    raises SolveCancelled, unless the image was solved before. A cancellation stays cancelled, and can be given to
+    several solves.
+    """
+
+    def __init__(self):
+        # the flag which the library reads while it solves
+        self._flag = c.c_int32(0)
+
+    def cancel(self) -> None:
+        """Cancels the solves which were given this cancellation, from any thread."""
+        self._flag.value = 1
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether cancel was called."""
+        return self._flag.value != 0
+
+
 class Solver:
     """
     A solver, with the catalogs which are installed in a directory: they stay open between solves, which keeps
@@ -293,7 +321,8 @@ class Solver:
               fov: Optional[float] = None, scale_low: Optional[float] = None, scale_high: Optional[float] = None,
               pixel_size: Optional[float] = None, epoch: Optional[float] = None, parity: str = "both",
               timeout: Optional[float] = None, sip_order: Optional[int] = None, binning: Optional[int] = None,
-              sigma: Optional[float] = None, max_stars: Optional[int] = None, quad_stars: Optional[int] = None) -> Result:
+              sigma: Optional[float] = None, max_stars: Optional[int] = None, quad_stars: Optional[int] = None,
+              cancellation: Optional[Cancellation] = None) -> Result:
         """
         Solves an image: its pixels are copied, converted and binned in a single pass, then searched for in the
         catalogs, so that they can be changed as soon as solve returns.
@@ -327,12 +356,14 @@ class Solver:
             sigma: the threshold of the detection of stars, in units of background noise
             max_stars: the largest number of stars to detect
             quad_stars: the number of stars, the brightest first, used to search for a match
+            cancellation: cancels the solve from another thread, see Cancellation
 
         Returns:
             the result, solved or not
 
         Raises:
             ValueError: if the pixels can't be read: their type, their byte order, their layout, their size
+            SolveCancelled: if the cancellation was cancelled before the image was solved
             AsterionError: if the solver is closed, or the options are out of range
         """
         options = _options(parity, ra=ra, dec=dec, radius=radius, fov=fov, scale_low=scale_low, scale_high=scale_high,
@@ -341,9 +372,12 @@ class Solver:
         image = _Image.of(pixels, width, height, sample_type, row_stride)
         solution = _native.Solution()
         result = c.c_void_p()
+        flag = c.byref(cancellation._flag) if cancellation is not None else None
         with self._solve() as handle, image.address() as address:
-            status = _native.call("asterion_solve", handle, address, image.code, image.width, image.height,
-                                  image.row_stride, int(bayer), c.byref(options), c.byref(solution), c.byref(result))
+            status = _native.call("asterion_solve_cancellable", handle, address, image.code, image.width, image.height,
+                                  image.row_stride, int(bayer), c.byref(options), c.byref(solution), c.byref(result), flag)
+        if status == _native.CANCELLED:
+            raise SolveCancelled("The solve was cancelled")
         _native.check(status)
         return Result(status == _native.SOLVED, solution, result)
 

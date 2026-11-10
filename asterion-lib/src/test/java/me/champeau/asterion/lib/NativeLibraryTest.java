@@ -110,6 +110,14 @@ class NativeLibraryTest {
         var regions = fields(line(lines, "regions: "));
         assertEquals("1", regions.get("right"), output);
         assertEquals("0", regions.get("wrong"), output);
+        // a solve which may be cancelled: a solve without a flag or when it's 0, and when it's set, a search of a
+        // minute which stops at once, without a result
+        var cancel = fields(line(lines, "cancel: "));
+        assertEquals("1", cancel.get("null"), output);
+        assertEquals("1", cancel.get("not_cancelled"), output);
+        assertEquals("-2", cancel.get("cancelled"), output);
+        assertTrue(Double.parseDouble(cancel.get("cancelled_ms")) < 5000, output);
+        assertEquals("0", cancel.get("result"), output);
         var zeros = fields(line(lines, "zero_options: "));
         assertEquals("-1", zeros.get("status"), output);
         assertTrue(zeros.get("error").startsWith("The option timeout must be positive"), output);

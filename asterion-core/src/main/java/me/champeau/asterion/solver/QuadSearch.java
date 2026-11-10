@@ -25,6 +25,7 @@ import me.champeau.asterion.math.TangentPlane;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /**
  * Searches the quads of an image in indexes. Quads are enumerated starting with the ones made
@@ -85,6 +86,7 @@ final class QuadSearch {
     private final double diagonal;
     private final double maxResidualFactor;
     private final long deadline;
+    private final BooleanSupplier cancellation;
     private final Hypothesis hypothesis = new Hypothesis();
     /** The verified hypothesis: the similarity of the quad, or for wide fields the camera, see {@link #wide}. */
     private Hypothesis result;
@@ -174,6 +176,7 @@ final class QuadSearch {
         this.hintRadius = hintRadius;
         this.maxResidualFactor = 2 * tolerance;
         this.deadline = deadline;
+        this.cancellation = options.cancellation();
     }
 
     /**
@@ -207,7 +210,8 @@ final class QuadSearch {
         var count = new byte[pairs];
         var slack = tolerance * (1 + tolerance);
         for (var nn = 1; nn < n; nn++) {
-            if (System.nanoTime() > deadline) {
+            // a cancelled search stops as one which times out
+            if (System.nanoTime() > deadline || cancellation.getAsBoolean()) {
                 timedOut = true;
                 return null;
             }

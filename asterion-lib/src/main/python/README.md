@@ -124,7 +124,8 @@ conventions of FITS instead, where it's `(1, 1)`.
 | `install_catalog(name, directory=None, progress=None)` | installs a catalog, reporting its `Progress` |
 | `default_catalog_directory()` | the directory of the catalogs by default |
 | `version()` | the version of the solver |
-| `AsterionError` | the errors of the solver; `InstallationCancelled` when an installation is cancelled. Pixels which can't be read raise `ValueError` |
+| `Cancellation()` | cancels solves from another thread, with `cancel()` |
+| `AsterionError` | the errors of the solver; `InstallationCancelled` when an installation is cancelled, `SolveCancelled` when a solve is. Pixels which can't be read raise `ValueError` |
 
 The options of `solve`, all optional:
 
@@ -141,6 +142,18 @@ The options of `solve`, all optional:
 | `timeout` | how long to search, in seconds |
 | `sip_order` | the order of the polynomials of the distortion: 0 to disable them, 2 to 5, or -1 to choose |
 | `binning`, `sigma`, `max_stars`, `quad_stars` | the detection of stars, as with the command line tool |
+| `cancellation` | a `Cancellation`, which stops the solve once it's cancelled, from another thread |
+
+A solve can be cancelled from another thread, such as the one of a user interface, while the solve runs on its own:
+
+```python
+cancellation = asterion.Cancellation()
+# the user interface calls cancellation.cancel(), on its own thread, when the user cancels
+try:
+    result = solver.solve(frame, cancellation=cancellation)
+except asterion.SolveCancelled:
+    ...  # cancelled before the image was solved
+```
 
 ## Processes
 

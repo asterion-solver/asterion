@@ -18,7 +18,10 @@ their own, with a synthetic catalog and an image of it, given by environment var
 import array
 import ctypes
 import os
+import random
 import sys
+import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -207,6 +210,37 @@ class SolverTest(unittest.TestCase):
         for message, solve in refused.items():
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 solve()
+
+    def test_cancels_a_solve_from_another_thread(self):
+        # random stars over noise, which are searched until the budget of the search ends: each row of noise is a
+        # slice of a longer one
+        stars = random.Random(8)
+        noise = array.array("H", (1000 + int(stars.gauss(0, 8)) for _ in range(WIDTH + 997)))
+        samples = array.array("H")
+        for y in range(HEIGHT):
+            samples.extend(noise[y * 389 % 997:y * 389 % 997 + WIDTH])
+        for _ in range(600):
+            cx, cy = stars.uniform(5, WIDTH - 5), stars.uniform(5, HEIGHT - 5)
+            for y in range(int(cy) - 3, int(cy) + 4):
+                for x in range(int(cx) - 3, int(cx) + 4):
+                    samples[y * WIDTH + x] += int(5000 * 2.718 ** (-((x - cx) ** 2 + (y - cy) ** 2) / 4))
+        options = {"timeout": 60, "max_stars": 600, "quad_stars": 500}
+        # how long the search lasts, then the same one, cancelled by another thread
+        start = time.monotonic()
+        self.assertFalse(self.solver.solve(samples, WIDTH, HEIGHT, cancellation=asterion.Cancellation(), **options).solved)
+        uncancelled = time.monotonic() - start
+        cancellation = asterion.Cancellation()
+        self.assertFalse(cancellation.cancelled)
+        threading.Timer(0.05, cancellation.cancel).start()
+        start = time.monotonic()
+        with self.assertRaises(asterion.SolveCancelled):
+            self.solver.solve(samples, WIDTH, HEIGHT, cancellation=cancellation, **options)
+        self.assertLess(time.monotonic() - start, uncancelled / 2)
+        self.assertTrue(cancellation.cancelled)
+        # a cancellation which is cancelled already cancels at once, one which isn't changes nothing
+        with self.assertRaises(asterion.SolveCancelled):
+            self.solver.solve(samples, WIDTH, HEIGHT, cancellation=cancellation, **options)
+        self.assertSolved(self.solver.solve(PIXELS, WIDTH, HEIGHT, sample_type="uint16", cancellation=asterion.Cancellation()))
 
     def test_details_of_a_result(self):
         result = self.solver.solve(PIXELS, WIDTH, HEIGHT, sample_type="uint16")

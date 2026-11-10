@@ -18,6 +18,7 @@ package me.champeau.asterion.solver;
 import me.champeau.asterion.image.DetectionOptions;
 
 import java.time.Duration;
+import java.util.function.BooleanSupplier;
 
 /**
  * Parameters of the solver. Instances are immutable, and created with a {@link #builder() builder},
@@ -36,6 +37,9 @@ import java.time.Duration;
  * @param codeTolerance the maximum distance between the geometric hash codes of matching quads
  * @param sipOrder the order of the SIP distortion polynomials: 0 to disable them, -1 to choose automatically
  * @param timeout the time after which the solver gives up
+ * @param cancellation tells if the solve is cancelled: the solver then gives up as soon as it can, as when it times out.
+ * Its searches call it concurrently, tens of thousands of times per solve: it must be thread-safe, and cheap, such as
+ * reading a volatile field
  * @param parity the handedness of the image
  * @param epoch the date of the image as a Julian year, used to apply proper motions, or NaN for the date of the image file
  * @param binning the binning applied to image files before detecting stars, 0 to choose automatically
@@ -56,11 +60,15 @@ public record SolverOptions(
         double codeTolerance,
         int sipOrder,
         Duration timeout,
+        BooleanSupplier cancellation,
         Parity parity,
         double epoch,
         int binning,
         double pixelSizeMicrons,
         DetectionOptions detection) {
+    /** The cancellation of the solves which are never cancelled: the same one, so that their options are equal. */
+    private static final BooleanSupplier NEVER_CANCELLED = () -> false;
+
     public static Builder builder() {
         return new Builder();
     }
@@ -84,6 +92,7 @@ public record SolverOptions(
         b.codeTolerance = codeTolerance;
         b.sipOrder = sipOrder;
         b.timeout = timeout;
+        b.cancellation = cancellation;
         b.parity = parity;
         b.epoch = epoch;
         b.binning = binning;
@@ -111,6 +120,7 @@ public record SolverOptions(
         private double codeTolerance = 0.01;
         private int sipOrder = -1;
         private Duration timeout = Duration.ofSeconds(30);
+        private BooleanSupplier cancellation = NEVER_CANCELLED;
         private Parity parity = Parity.BOTH;
         private double epoch = Double.NaN;
         private int binning;
@@ -183,6 +193,12 @@ public record SolverOptions(
             return this;
         }
 
+        /** Tells if the solve is cancelled, see {@link SolverOptions#cancellation()}: thread-safe, and cheap. */
+        public Builder cancellation(BooleanSupplier value) {
+            this.cancellation = value;
+            return this;
+        }
+
         public Builder parity(Parity value) {
             this.parity = value;
             return this;
@@ -216,7 +232,8 @@ public record SolverOptions(
 
         public SolverOptions build() {
             return new SolverOptions(raDeg, decDeg, searchRadiusDeg, minScale, maxScale, minFieldWidthDeg, maxFieldWidthDeg, useImageHints,
-                    blindFallback, maxQuadStars, codeTolerance, sipOrder, timeout, parity, epoch, binning, pixelSizeMicrons, detection);
+                    blindFallback, maxQuadStars, codeTolerance, sipOrder, timeout, cancellation, parity, epoch, binning, pixelSizeMicrons,
+                    detection);
         }
     }
 }

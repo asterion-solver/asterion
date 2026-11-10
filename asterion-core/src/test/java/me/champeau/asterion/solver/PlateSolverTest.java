@@ -33,6 +33,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -221,6 +224,31 @@ class PlateSolverTest {
         var result = solver.solve(StarList.of(x, y), WIDTH, HEIGHT, ImageHints.none(), SolverOptions.defaults());
         assertTrue(result.solved());
         assertTrue(SyntheticSky.separation(truth, result.solution().orElseThrow().wcs(), 800, 600) < 5);
+    }
+
+    @Test
+    void stopsWhenCancelled() throws Exception {
+        // random stars, which are searched for seconds, cancelled by another thread
+        var random = new Random(8);
+        var x = new double[150];
+        var y = new double[150];
+        for (var i = 0; i < x.length; i++) {
+            x[i] = random.nextDouble() * WIDTH;
+            y[i] = random.nextDouble() * HEIGHT;
+        }
+        var cancelled = new AtomicBoolean();
+        var options = SolverOptions.builder().timeout(Duration.ofSeconds(60)).cancellation(cancelled::get).build();
+        try (var canceller = Executors.newSingleThreadScheduledExecutor()) {
+            canceller.schedule(() -> cancelled.set(true), 100, TimeUnit.MILLISECONDS);
+            var start = System.nanoTime();
+            var result = solver.solve(StarList.of(x, y), WIDTH, HEIGHT, ImageHints.none(), options);
+            var seconds = (System.nanoTime() - start) / 1e9;
+            assertFalse(result.solved());
+            // the search lasts seconds when it isn't cancelled
+            assertTrue(seconds < 1, "stopped after " + seconds + " s");
+        }
+        // the options of solves which aren't cancelled are equal
+        assertEquals(SolverOptions.defaults(), SolverOptions.builder().build());
     }
 
     @Test

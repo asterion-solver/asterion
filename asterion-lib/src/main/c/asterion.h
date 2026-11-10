@@ -56,7 +56,7 @@
 #define ASTERION_SOLVED 1
 #define ASTERION_NOT_SOLVED 0
 #define ASTERION_ERROR (-1)
-/* What asterion_install_catalog returns when the program cancels. */
+/* What asterion_install_catalog and asterion_solve_cancellable return when the program cancels. */
 #define ASTERION_CANCELLED (-2)
 
 /* The handedness of images. */
@@ -194,6 +194,9 @@ typedef struct {
  */
 typedef int (*asterion_progress_callback)(const asterion_progress *progress, void *user_data);
 
+/* The flag which cancels asterion_solve_cancellable, which the program sets from another thread. */
+typedef const volatile int32_t *asterion_cancel_flag;
+
 /*
  * Tells if this header matches the library: 1 if each structure has the size which the library
  * reads and writes, 0 otherwise. A program checks it once, after creating the isolate.
@@ -279,6 +282,17 @@ int asterion_default_options(graal_isolatethread_t *thread, void *options);
  */
 int asterion_solve(graal_isolatethread_t *thread, void *solver, const void *pixels, int sample_type, int width, int height,
                    long long int row_stride, int bayer, const void *options, void *solution, void **result);
+
+/*
+ * Solves an image as asterion_solve does, unless the program cancels it, from another thread: once the int32_t
+ * which cancel points to isn't 0, the search stops as soon as it can, and the function returns ASTERION_CANCELLED,
+ * the solution being filled as without one, and without a result; or ASTERION_SOLVED, if the image was solved
+ * before. The program sets it with an atomic or a volatile write, and it stays valid until the function returns.
+ * A cancel which is NULL never cancels: asterion_solve is asterion_solve_cancellable with NULL.
+ */
+int asterion_solve_cancellable(graal_isolatethread_t *thread, void *solver, const void *pixels, int sample_type, int width,
+                               int height, long long int row_stride, int bayer, const void *options, void *solution,
+                               void **result, const volatile int32_t *cancel);
 
 /* Frees a result: NULL is ignored. */
 void asterion_result_free(graal_isolatethread_t *thread, void *result);

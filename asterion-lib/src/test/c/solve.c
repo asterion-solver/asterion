@@ -183,6 +183,21 @@ int main(int argc, char **argv) {
     region.timeout = 5;
     int wrong = asterion_solve(thread, solver, pixels, type, width, height, stride, bayer, &region, &solution, NULL);
     printf("regions: right=%d wrong=%d\n", right, wrong);
+
+    // a solve which may be cancelled: without a flag, or with one which is 0, it's a solve; with one which is set, a
+    // search which would last a minute stops at once, without a result
+    region.timeout = 60;
+    int with_null = asterion_solve_cancellable(thread, solver, pixels, type, width, height, stride, bayer, NULL, &solution, NULL, NULL);
+    volatile int32_t cancel = 0;
+    int not_cancelled = asterion_solve_cancellable(thread, solver, pixels, type, width, height, stride, bayer, NULL, &solution, NULL,
+                                                   &cancel);
+    cancel = 1;
+    void *none = NULL;
+    start = now_ms();
+    int cancelled = asterion_solve_cancellable(thread, solver, pixels, type, width, height, stride, bayer, &region, &solution, &none,
+                                               &cancel);
+    printf("cancel: null=%d not_cancelled=%d cancelled=%d cancelled_ms=%.1f result=%d\n", with_null, not_cancelled, cancelled,
+           now_ms() - start, none != NULL);
     // options which weren't filled by asterion_default_options are rejected
     asterion_options zeros = {0};
     int rejected = asterion_solve(thread, solver, pixels, type, width, height, stride, bayer, &zeros, &solution, NULL);
