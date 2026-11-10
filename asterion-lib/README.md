@@ -156,6 +156,18 @@ Pixel positions are counted from 0, in the image which was given: the center of 
 whatever the binning which Asterion applies to it. The WCS of `asterion_solution` follows the conventions of
 FITS instead, where the center of the first pixel is (1, 1).
 
+A solve can be cancelled from another thread, such as the one of a user interface, while it runs on its own:
+`asterion_solve_cancellable` takes the same arguments as `asterion_solve`, and a flag which the program sets
+to cancel it. The search then stops as soon as it can, and the function returns `ASTERION_CANCELLED`, unless the
+image was solved before. The thread which cancels doesn't need to be attached to the isolate:
+
+```c
+volatile int32_t cancel = 0;                          // stays valid until the solve returns
+// on another thread: cancel = 1;
+int status = asterion_solve_cancellable(thread, solver, pixels, ASTERION_UINT16, width, height, row_stride, 0,
+                                        &options, &solution, &result, &cancel);
+```
+
 ## Closing
 
 The catalogs of a solver are memory mapped: what its searches read of them stays in the memory of the

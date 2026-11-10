@@ -52,6 +52,8 @@ import java.io.UncheckedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.StructLayout;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,6 +66,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 
 import static me.champeau.asterion.lib.CStructs.CATALOG;
 import static me.champeau.asterion.lib.CStructs.MATCH;
@@ -89,6 +92,8 @@ final class NativeLibrary {
     private static final int NOT_SOLVED = 0;
     private static final int ERROR = -1;
     private static final int CANCELLED = -2;
+    /** Reads the flag which cancels a solve, an int32_t which another thread of the program writes. */
+    private static final VarHandle FLAG = ValueLayout.JAVA_INT.varHandle();
 
     /** The events of asterion_progress, by their codes in the header: ASTERION_EVENT_STEP is 1. */
     private static final int STEP = 1;
@@ -394,6 +399,25 @@ final class NativeLibrary {
     @CEntryPoint(name = "asterion_solve")
     static int solve(IsolateThread thread, ObjectHandle solver, @CConst VoidPointer pixels, int sampleType, int width, int height,
                      long rowStride, int bayer, @CConst VoidPointer options, VoidPointer solution, WordPointer result) {
+        return solve(solver, pixels, sampleType, width, height, rowStride, bayer, options, solution, result, WordFactory.nullPointer());
+    }
+
+    /**
+     * Solves an image, as asterion_solve does, unless the program cancels it from another thread.
+     *
+     * @param cancel an int32_t which the program sets to non-zero to cancel the solve, or NULL
+     * @return ASTERION_SOLVED, ASTERION_NOT_SOLVED, ASTERION_CANCELLED or ASTERION_ERROR
+     */
+    @CEntryPoint(name = "asterion_solve_cancellable")
+    static int solveCancellable(IsolateThread thread, ObjectHandle solver, @CConst VoidPointer pixels, int sampleType, int width,
+                                int height,
+                                long rowStride, int bayer, @CConst VoidPointer options, VoidPointer solution, WordPointer result,
+                                @CTypedef(name = "asterion_cancel_flag") VoidPointer cancel) {
+        return solve(solver, pixels, sampleType, width, height, rowStride, bayer, options, solution, result, cancel);
+    }
+
+    private static int solve(ObjectHandle solver, VoidPointer pixels, int sampleType, int width, int height, long rowStride, int bayer,
+                             VoidPointer options, VoidPointer solution, WordPointer result, VoidPointer cancel) {
         try {
             if (pixels.isNull()) {
                 throw new IllegalArgumentException("The pixels are required");
@@ -403,6 +427,13 @@ final class NativeLibrary {
             }
             PlateSolver plateSolver = ObjectHandles.getGlobal().<Session>get(solver).solver();
             var solverOptions = options(options);
+            BooleanSupplier cancelled = () -> false;
+            if (cancel.isNonNull()) {
+                // the program writes the flag from another thread: it's read as such
+                var flag = memory(cancel, Integer.BYTES);
+                cancelled = () -> (int) FLAG.getVolatile(flag, 0L) != 0;
+                solverOptions = solverOptions.toBuilder().cancellation(cancelled).build();
+            }
             var type = SAMPLE_TYPES[sampleType - 1];
             var start = System.nanoTime();
             var size = Math.max(0, height - 1) * rowStride + (long) width * type.bytes();
@@ -411,6 +442,10 @@ final class NativeLibrary {
             var solved = plateSolver.solveInPlace(image, ImageHints.none(), solverOptions, readMillis);
             if (solution.isNonNull()) {
                 write(solved, memory(solution, SOLUTION));
+            }
+            // a solve which was cancelled has no result, unless it was solved before it stopped
+            if (!solved.solved() && cancelled.getAsBoolean()) {
+                return CANCELLED;
             }
             if (result.isNonNull()) {
                 result.write(ObjectHandles.getGlobal().create(new Result(solved)));

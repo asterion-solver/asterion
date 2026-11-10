@@ -100,6 +100,8 @@ _SIGNATURES = {
     "asterion_default_options": (c.c_int, [_p, c.POINTER(Options)]),
     "asterion_solve": (c.c_int, [_p, _p, _p, c.c_int, c.c_int, c.c_int, c.c_longlong, c.c_int, c.POINTER(Options),
                                  c.POINTER(Solution), c.POINTER(_p)]),
+    "asterion_solve_cancellable": (c.c_int, [_p, _p, _p, c.c_int, c.c_int, c.c_int, c.c_longlong, c.c_int, c.POINTER(Options),
+                                             c.POINTER(Solution), c.POINTER(_p), c.POINTER(c.c_int32)]),
     "asterion_result_free": (None, [_p, _p]),
     "asterion_result_json": (c.c_int, [_p, _p, c.c_char_p, c.c_size_t]),
     "asterion_result_object_count": (c.c_int, [_p, _p]),

@@ -26,6 +26,7 @@ import me.champeau.asterion.math.Sphere;
 import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -151,6 +152,11 @@ public final class PlateSolver {
         return solve(image, hints, options, loadMillis, true);
     }
 
+    /** Whether a solve which failed tries another way: unless it has no time left, or was cancelled. */
+    private static boolean searchesAgain(SolveResult result, Duration remaining, SolverOptions options) {
+        return !result.solved() && !remaining.isNegative() && !remaining.isZero() && !options.cancellation().getAsBoolean();
+    }
+
     private SolveResult solve(GrayImage image, ImageHints hints, SolverOptions options, double loadMillis, boolean ownsImage) {
         var start = System.nanoTime();
         var stars = ownsImage ? StarDetector.detectInPlace(image, options.detection()) : StarDetector.detect(image, options.detection());
@@ -158,7 +164,7 @@ public final class PlateSolver {
         var result = solve(stars, image.sourceWidth(), image.sourceHeight(), hints, options, Stages.USUAL);
         var s = result.stats();
         var remaining = options.timeout().minusMillis((long) s.solveMillis());
-        if (!result.solved() && !remaining.isNegative() && !remaining.isZero()) {
+        if (searchesAgain(result, remaining, options)) {
             // Heavily processed images have hundreds of faint detections which aren't stars, and
             // the few stars they have can be lost among them: a stricter threshold keeps the stars
             // which stand out, and finds the field of some of these images.
@@ -177,7 +183,7 @@ public final class PlateSolver {
             }
             remaining = options.timeout().minusMillis((long) s.solveMillis());
         }
-        if (!result.solved() && !remaining.isNegative() && !remaining.isZero()) {
+        if (searchesAgain(result, remaining, options)) {
             // Images taken with wide angle lenses, last: the stars of landscapes are faint but
             // sharp points among the bright lights of the foreground, so they are ranked by peak
             var wideStart = System.nanoTime();
