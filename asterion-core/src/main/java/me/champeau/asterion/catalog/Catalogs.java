@@ -78,7 +78,7 @@ public final class Catalogs {
      * using a name such as {@code gaia-1000} for 1000 stars per square degree.
      */
     public static List<Descriptor> available() {
-        return List.of(TYCHO2, new Gaia(500), new Gaia(1000), new Gaia(2000));
+        return List.of(TYCHO2, new Gaia(500), new Gaia(1000), new Gaia(2000), new Gaia(3000));
     }
 
     public static Optional<Descriptor> find(String name) {
