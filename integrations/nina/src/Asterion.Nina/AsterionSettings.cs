@@ -55,6 +55,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
     private CancellationTokenSource? download;
     private string downloadStatus = "";
     private double? downloadFraction;
+    private int customDensity = 1500;
 
     private AsterionSettings(IProfileService profileService, IApplicationStatusMediator statusMediator) {
         this.profileService = profileService;
@@ -65,6 +66,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
             _ = RefreshAsync();
         };
         CancelDownload = new Command(() => download?.Cancel());
+        InstallCustomDensity = new Command(() => _ = DownloadAsync(new Catalog(GaiaDensity.Name(customDensity), "", false, 0)));
         Refresh = new Command(() => _ = RefreshAsync());
         _ = RefreshAsync();
     }
@@ -139,6 +141,23 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
 
     public ICommand CancelDownload { get; }
 
+    /// <summary>The density of the catalog of Gaia DR3 to install besides the listed ones, in stars per square degree.</summary>
+    public int CustomDensity {
+        get => customDensity;
+        set {
+            Set(ref customDensity, value);
+            OnCustomDensityChanged();
+        }
+    }
+
+    /// <summary>What installing the catalog of <see cref="CustomDensity"/> does, and what it takes.</summary>
+    public string CustomDensityDescription =>
+        GaiaDensity.Describe(customDensity, catalogList?.Catalogs.Where(c => c.Published).Select(c => c.Name) ?? []);
+
+    public bool CanInstallCustomDensity => GaiaDensity.IsValid(customDensity) && !Downloading;
+
+    public ICommand InstallCustomDensity { get; }
+
     public ICommand Refresh { get; }
 
     /// <summary>The directory of the plugin, where the native library of Asterion is.</summary>
@@ -182,7 +201,14 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
         UpdateCatalogs();
     }
 
+    private void OnCustomDensityChanged() {
+        OnPropertyChanged(nameof(CustomDensityDescription));
+        OnPropertyChanged(nameof(CanInstallCustomDensity));
+    }
+
     private void UpdateCatalogs() {
+        // the catalogs which are published, or a download which starts or stops, change what a density does
+        OnCustomDensityChanged();
         var list = catalogList;
         Catalogs = list?.Catalogs.Select(c => new CatalogItem(c, Downloading, DownloadAsync, RemoveAsync)).ToList() ?? [];
         CatalogStatus = list == null ? ""

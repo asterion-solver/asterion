@@ -21,7 +21,8 @@ namespace Asterion.Nina.Core;
 /// <summary>A catalog which Asterion can install, and whether it is installed.</summary>
 /// <param name="Size">the size of its index in bytes, when it is installed, or else 0</param>
 /// <param name="Error">why its index can't be read, or an empty string</param>
-public sealed record Catalog(string Name, string Description, bool Installed, long Size, string Error = "");
+/// <param name="Published">whether it's published already indexed, rather than only installed</param>
+public sealed record Catalog(string Name, string Description, bool Installed, long Size, string Error = "", bool Published = true);
 
 /// <summary>The catalogs of a directory.</summary>
 /// <param name="Directory">the directory where the catalogs are installed</param>

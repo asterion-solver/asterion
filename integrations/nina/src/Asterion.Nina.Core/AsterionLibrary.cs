@@ -138,7 +138,7 @@ public sealed unsafe class AsterionLibrary {
             for (var i = 0; i < count; i++) {
                 fixed (NativeCatalog* c = &native[i]) {
                     catalogs.Add(new Catalog(NativeFunctions.Text(c->Name, 64), NativeFunctions.Text(c->Description, 256), c->Installed != 0,
-                        c->Size, NativeFunctions.Text(c->Error, 256)));
+                        c->Size, NativeFunctions.Text(c->Error, 256), c->Available != 0));
                 }
             }
             return new CatalogList(directory ?? DefaultCatalogDirectory, catalogs);

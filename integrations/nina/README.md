@@ -24,6 +24,11 @@ Then, in Options > Plate Solving:
 A download can be cancelled: downloading the catalog again resumes where it stopped. The catalogs are
 shared with the other tools of Asterion, such as its command line and its web interface.
 
+Gaia DR3 can also be installed with another density, from 10 to 10,000 stars per square degree. A density
+which isn't published already indexed is built from the stars of Gaia DR3, queried from the Gaia archives: it
+takes hours, disk space and memory in N.I.N.A., which the settings estimate before it starts, and is better done
+when N.I.N.A. doesn't image, or with the web interface of Asterion.
+
 ## Settings
 
 The settings of the plugin are in Options > Plate Solving, when Asterion is selected. They are kept in the

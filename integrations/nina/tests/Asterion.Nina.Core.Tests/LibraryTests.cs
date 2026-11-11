@@ -105,7 +105,7 @@ public class LibraryTests {
         using var catalogs = new TemporaryDirectory();
         var list = AsterionLibrary.Load(TestedLibrary).Catalogs(catalogs.Path);
         Assert.Equal(catalogs.Path, list.Directory);
-        Assert.Contains(list.Catalogs, c => c is { Name: "gaia-500", Installed: false, Size: 0 } && c.Description.Length > 0);
+        Assert.Contains(list.Catalogs, c => c is { Name: "gaia-500", Installed: false, Size: 0, Published: true } && c.Description.Length > 0);
     }
 
     [Fact]
@@ -115,8 +115,8 @@ public class LibraryTests {
         }
         using var catalogs = await Catalogs();
         var list = AsterionLibrary.Load(TestedLibrary).Catalogs(catalogs.Path);
-        // a catalog which was built by hand, after the ones which can be installed
-        Assert.Equal(new Catalog("sharpcap", "", true, new FileInfo(list.IndexFile("sharpcap")).Length), list.Catalogs[^1]);
+        // a catalog which was built by hand, after the ones which can be installed, and isn't published
+        Assert.Equal(new Catalog("sharpcap", "", true, new FileInfo(list.IndexFile("sharpcap")).Length, Published: false), list.Catalogs[^1]);
     }
 
     [Fact]
