@@ -124,6 +124,14 @@ paths:
             type: integer
             minimum: 0
             default: 0
+        - name: sigma
+          in: query
+          description: The star detection threshold, in units of background noise.
+          schema:
+            type: number
+            format: double
+            exclusiveMinimum: 0
+            default: 5
         - name: timeout
           in: query
           description: The time after which the search is given up, in seconds.
