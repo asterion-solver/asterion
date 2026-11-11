@@ -73,27 +73,17 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0" Text="Asterion executable" />
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0" Text="Catalog directory" />
                     <TextBox Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
-                             Text="{Binding ExecutablePath, UpdateSourceTrigger=LostFocus}"
-                             ToolTip="Another asterion executable than the one included in the plugin, such as a newer version" />
-                    <Button Grid.Row="0" Grid.Column="2" Margin="5,0,0,0" MinWidth="30" Content="..." Click="BrowseExecutable"
-                            ToolTip="Select an asterion executable" />
-                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,2,0,0" TextWrapping="Wrap" Opacity="0.7"
-                               Text="Empty: the executable included in the plugin. Set it only to use another version of Asterion." />
-                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,8,0" Text="Catalog directory" />
-                    <TextBox Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,8,0,0"
                              Text="{Binding CatalogDirectory, UpdateSourceTrigger=LostFocus}"
                              ToolTip="Where the catalogs are installed" />
-                    <Button Grid.Row="2" Grid.Column="2" Margin="5,8,0,0" MinWidth="30" Content="..." Click="BrowseCatalogDirectory"
+                    <Button Grid.Row="0" Grid.Column="2" Margin="5,0,0,0" MinWidth="30" Content="..." Click="BrowseCatalogDirectory"
                             ToolTip="Select the directory of the catalogs" />
-                    <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,2,0,0" TextWrapping="Wrap" Opacity="0.7"
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,2,0,0" TextWrapping="Wrap" Opacity="0.7"
                                Text="Empty: the default directory of Asterion, which its other tools share." />
-                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,8,0" Text="Timeout (s)" />
-                    <TextBox Grid.Row="4" Grid.Column="1" Width="60" HorizontalAlignment="Left" Margin="0,8,0,0"
+                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,8,0" Text="Timeout (s)" />
+                    <TextBox Grid.Row="2" Grid.Column="1" Width="60" HorizontalAlignment="Left" Margin="0,8,0,0"
                              Text="{Binding TimeoutSeconds, UpdateSourceTrigger=LostFocus}"
                              ToolTip="The time after which a solve is given up" />
                 </Grid>

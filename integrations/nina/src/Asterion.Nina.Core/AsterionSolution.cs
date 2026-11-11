@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System.Text.Json;
 
 namespace Asterion.Nina.Core;
 
@@ -24,7 +23,7 @@ namespace Asterion.Nina.Core;
 /// </summary>
 public sealed record LinearWcs(double Crval1, double Crval2, double Crpix1, double Crpix2, double Cd11, double Cd12, double Cd21, double Cd22);
 
-/// <summary>What asterion tells about an image, from its JSON output.</summary>
+/// <summary>What Asterion tells about an image.</summary>
 /// <param name="Stars">the number of stars which were detected</param>
 /// <param name="TotalMillis">the time asterion took, from reading the image to solving it</param>
 /// <param name="Wcs">the solution, or null if the image isn't solved</param>
@@ -33,21 +32,15 @@ public sealed record LinearWcs(double Crval1, double Crval2, double Crpix1, doub
 public sealed record AsterionSolution(int Stars, double TotalMillis, LinearWcs? Wcs, int MatchedStars, double RmsArcsec) {
     public bool Solved => Wcs != null;
 
-    /// <summary>Reads the JSON output of asterion for a single image.</summary>
-    /// <exception cref="AsterionException">if the output isn't the one of asterion</exception>
-    public static AsterionSolution Parse(string json) => AsterionJson.Read(json, "solution", root => {
-        // the output of a single image may still be an array
-        var image = root.ValueKind == JsonValueKind.Array ? root[0] : root;
-        var stars = image.TryGetProperty("stars", out var s) ? s.GetInt32() : 0;
-        var total = image.TryGetProperty("timing", out var timing) ? AsterionJson.Number(timing, "totalMillis") ?? 0 : 0;
-        if (!image.GetProperty("solved").GetBoolean()) {
-            return new AsterionSolution(stars, total, null, 0, double.NaN);
+    /// <summary>The solution which the library wrote.</summary>
+    internal static unsafe AsterionSolution Of(bool solved, NativeSolution solution) {
+        var total = solution.ReadMs + solution.DetectMs + solution.SolveMs;
+        if (!solved) {
+            return new AsterionSolution(solution.Stars, total, null, 0, double.NaN);
         }
-        var wcs = image.GetProperty("wcs");
-        double Keyword(string name) => wcs.GetProperty(name).GetDouble();
-        return new AsterionSolution(stars, total,
-            new LinearWcs(Keyword("CRVAL1"), Keyword("CRVAL2"), Keyword("CRPIX1"), Keyword("CRPIX2"),
-                Keyword("CD1_1"), Keyword("CD1_2"), Keyword("CD2_1"), Keyword("CD2_2")),
-            image.GetProperty("matchedStars").GetInt32(), image.GetProperty("rmsArcsec").GetDouble());
-    });
+        return new AsterionSolution(solution.Stars, total,
+            new LinearWcs(solution.Crval[0], solution.Crval[1], solution.Crpix[0], solution.Crpix[1],
+                solution.Cd[0], solution.Cd[1], solution.Cd[2], solution.Cd[3]),
+            solution.MatchedStars, solution.Rms);
+    }
 }

@@ -29,18 +29,25 @@ shared with the other tools of Asterion, such as its command line and its web in
 The settings of the plugin are in Options > Plate Solving, when Asterion is selected. They are kept in the
 profile of N.I.N.A. The advanced settings are:
 
-| Setting             | Description                                                                          |
-|---------------------|--------------------------------------------------------------------------------------|
-| Asterion executable | another `asterion.exe` than the one included in the plugin, such as a newer version  |
-| Catalog directory   | where the catalogs are installed, instead of the default directory of Asterion       |
-| Timeout             | the time after which a solve is given up                                             |
+| Setting           | Description                                                                    |
+|-------------------|--------------------------------------------------------------------------------|
+| Catalog directory | where the catalogs are installed, instead of the default directory of Asterion |
+| Timeout           | the time after which a solve is given up                                       |
 
 ## How it works
 
-N.I.N.A. gives the image to solve in memory: the plugin writes it to a temporary FITS file, runs
-`asterion --json` on it, and reads the solution from its output. The primary solver searches the region of
-the sky which N.I.N.A. gives, the blind solver searches the whole sky. The orientation and the flip of the
-solution are computed the way N.I.N.A. computes them for ASTAP, so they mean the same for every solver.
+The plugin includes the native library of Asterion, `libasterion.dll`, which runs in the process of N.I.N.A.
+N.I.N.A. gives the image to solve in memory, and the plugin gives its pixels to the library as they are: no
+file is written. The catalogs stay open between solves, which keeps them fast, and are closed when one is
+installed or removed. The primary solver searches the region of the sky which N.I.N.A. gives, the blind
+solver searches the whole sky, and cancelling a solve in N.I.N.A. stops its search at once. The orientation
+and the flip of the solution are computed the way N.I.N.A. computes them for ASTAP, so they mean the same
+for every solver.
+
+As the library runs in the process of N.I.N.A., a fault in it would stop N.I.N.A., where it only stopped the
+solve of an external program before; its memory stays in N.I.N.A. between solves. The plugin checks that the
+library is the one it was built for before calling it. Like the other plugins, an update of the plugin takes
+effect once N.I.N.A. restarts: the library in use is only replaced then.
 
 ## Building
 
@@ -53,17 +60,19 @@ dotnet build src/Asterion.Nina -c Release
 
 There are two test projects:
 
-- `tests/Asterion.Nina.Core.Tests` tests running asterion and reading its output, on any platform. Its tests
-  run `asterion` when `ASTERION_EXECUTABLE` gives its path, and are skipped otherwise.
+- `tests/Asterion.Nina.Core.Tests` tests the calls to the library, on any platform. Its tests call the
+  library when `ASTERION_LIBRARY` gives its path, such as the one which `./gradlew :asterion-lib:nativeLibrary`
+  builds in `asterion-lib/build/native-library`, and are skipped otherwise.
 - `tests/Asterion.Nina.Tests` checks that the results of solutions are the ones N.I.N.A. computes for ASTAP.
   It needs N.I.N.A., so it builds on any platform but runs on Windows only.
 
 ```bash
-ASTERION_EXECUTABLE=/path/to/asterion dotnet test tests/Asterion.Nina.Core.Tests
+ASTERION_LIBRARY=/path/to/libasterion.so dotnet test tests/Asterion.Nina.Core.Tests
 ```
 
-With `-p:AsterionDistribution=<the unzipped Windows distribution of Asterion>`, the build also packages
-the plugin, with `asterion.exe` and its licenses, as `src/Asterion.Nina/bin/Release/asterion-nina-<version>.zip`.
+With `-p:AsterionLibrary=<the directory of the Windows library of Asterion, libasterion.dll>`, the build also
+packages the plugin, with the library, the license of Asterion and the notices of what it includes, as
+`src/Asterion.Nina/bin/Release/asterion-nina-<version>.zip`.
 The release workflow of the repository builds it this way, and publishes it with the other archives of a
 release. `New-NinaManifest.ps1` writes the manifest of a release for the plugin repository of N.I.N.A.: see
 "The N.I.N.A. plugin" in [DEVELOPERS.md](../../DEVELOPERS.md).
