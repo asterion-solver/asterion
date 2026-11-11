@@ -228,9 +228,11 @@ circled. The constellation lines are those of [Marc van der Sluys](https://githu
 
 A solution is shown on a view of the sky: the image where it is, upright as it was taken or north up, with
 the grid of coordinates, the directions of north and east, the constellations and the outlines of the deep sky
-objects around it, which can be moved and zoomed with the mouse, a finger or its buttons. The picture of the
-image is made by the browser, or by the server for the formats which browsers can't display, such as FITS
-files. The view can be saved as a JPEG image, as it is, where the image keeps its resolution.
+objects around it, which can be moved and zoomed with the mouse, a finger or its buttons, up to 8 pixels of the
+screen for each pixel of the image; its zoom is shown. The picture of the image is made by the browser, or by the
+server for the formats which browsers can't display, such as FITS files: a reduced one, then the image at its
+size once the view is zoomed in on it. The view can be saved as a JPEG image, as it is, where the image keeps its
+resolution, and so can the whole image at its size, with its annotations.
 
 When the web interface runs from the archive, next to `asterion`, it offers to install the `astap` executable of
 the [ASTAP compatibility mode](#astap-compatibility-mode) there, for the programs which call ASTAP.

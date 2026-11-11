@@ -232,6 +232,7 @@ svg.sky { width: 100%; height: auto; display: block; }
 .sky-compass-arrow { stroke: rgba(255, 255, 255, 0.85); stroke-width: 2; }
 .sky-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
 .sky-controls button { min-width: 2.2rem; }
+.sky-zoom { margin-left: auto; }
 .sky-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 0.3rem; color: var(--muted); }
 .sky-view figcaption { color: var(--muted); font-size: 0.85em; margin-top: 0.4rem; }
 .sky-full-screen {

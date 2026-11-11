@@ -52,13 +52,16 @@ class Projection {
         this.scale = (Math.min(width, height) / 2 - 4) / (2 * Math.tan(radius * RAD / 2));
     }
 
-    /** Projects a position, or returns null when it's far behind the edge of the chart. */
-    project(ra, dec) {
+    /**
+     * Projects a position, or returns null when it's far behind the edge of the chart, or, when it's unbounded,
+     * only when it's nearly opposite to the center, where the projection goes to infinity.
+     */
+    project(ra, dec, unbounded = false) {
         const d = ra * RAD - this.ra;
         const sinDec = Math.sin(dec * RAD);
         const cosDec = Math.cos(dec * RAD);
         const cosC = this.sinDec * sinDec + this.cosDec * cosDec * Math.cos(d);
-        if (cosC < Math.cos(Math.min(170, 1.6 * this.reach) * RAD)) return null;
+        if (cosC < Math.cos((unbounded ? 170 : Math.min(170, 1.6 * this.reach)) * RAD)) return null;
         const k = this.scale * 2 / (1 + cosC);
         const x = -k * cosDec * Math.sin(d);
         const y = -k * (this.cosDec * sinDec - this.sinDec * cosDec * Math.cos(d));
