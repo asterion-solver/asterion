@@ -214,6 +214,9 @@ of the catalogs. The port can also be chosen in the options of the page, which s
 the network, without any access control. An installed catalog can be disabled from the page, and enabled again:
 it stays on disk, but isn't used to solve, which is saved in the same file.
 
+The page is in English or in French: the language of the browser by default, which the menu at the top of the
+page changes, and the browser remembers. A "?" next to each option of a solve explains it.
+
 An image can also be given on the command line, `asterion-web image.fits`: the interface opens in the browser
 and solves it. On Windows, this is what dropping an image on `asterion-web.exe`, or on a shortcut to it, does.
 
@@ -229,7 +232,8 @@ circled. The constellation lines are those of [Marc van der Sluys](https://githu
 A solution is shown on a view of the sky: the image where it is, upright as it was taken or north up, with
 the grid of coordinates, the directions of north and east, the constellations and the outlines of the deep sky
 objects around it, which can be moved and zoomed with the mouse, a finger or its buttons, up to 8 pixels of the
-screen for each pixel of the image; its zoom is shown. The picture of the image is made by the browser, or by the
+screen for each pixel of the image; its zoom is shown, and a button sets it to 100 %, a pixel of the screen for
+each pixel of the image. The picture of the image is made by the browser, or by the
 server for the formats which browsers can't display, such as FITS files: a reduced one, then the image at its
 size once the view is zoomed in on it. The view can be saved as a JPEG image, as it is, where the image keeps its
 resolution, and so can the whole image at its size, with its annotations.

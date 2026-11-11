@@ -81,6 +81,15 @@ final class SolveRequest {
         }
     }
 
+    /** A number which must be positive and finite, such as a threshold. */
+    private double positive(String name, double defaultValue) {
+        var value = number(name, defaultValue);
+        if (!(value > 0) || Double.isInfinite(value)) {
+            throw new IllegalArgumentException("Invalid value for " + name + ": " + parameters.get(name));
+        }
+        return value;
+    }
+
     private boolean flag(String name, boolean defaultValue) {
         var value = parameters.get(name);
         return value == null ? defaultValue : !value.equalsIgnoreCase("false");
@@ -92,13 +101,14 @@ final class SolveRequest {
      * @throws IllegalArgumentException if a parameter is invalid
      */
     SolverOptions options() {
+        var detection = DetectionOptions.defaults();
         var builder = SolverOptions.builder()
                 .useImageHints(flag("hints", true))
                 .blindFallback(flag("blind", true))
                 .sipOrder((int) number("sipOrder", -1))
                 .timeout(Duration.ofMillis((long) (number("timeout", 30) * 1000)))
                 .binning((int) number("binning", 0))
-                .detection(DetectionOptions.defaults().withThresholdSigma(number("sigma", 5)));
+                .detection(detection.withThresholdSigma(positive("sigma", detection.thresholdSigma())));
         var parity = parameters.get("parity");
         if (parity != null) {
             try {

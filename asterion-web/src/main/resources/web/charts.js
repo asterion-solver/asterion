@@ -15,7 +15,7 @@ let skyData = null;
 function sky() {
     if (!skyData) {
         skyData = fetch('sky.json').then(response => {
-            if (!response.ok) throw new Error('Cannot load the sky data');
+            if (!response.ok) throw new Error(t('charts.skyData'));
             return response.json();
         });
     }
@@ -271,7 +271,8 @@ function locatorChart(data, solution) {
     content.append(svgElement('path', {d: dots.join(''), class: 'sky-star'}));
     drawField(content, projection, solution.outline);
     drawCompass(svg);
-    return figure(svg, `In ${solution.constellation.name}. Chart ${formatAngle(2 * projection.radius)} across, stars to magnitude 5.5.`);
+    return figure(svg, t('charts.locator', {constellation: solution.constellation.name, size: formatAngle(2 * projection.radius),
+        magnitude: formatNumber(5.5, 1)}));
 }
 
 /** The stars of the catalog around the image, and the ones which were matched. */
@@ -302,15 +303,15 @@ async function fieldChart(data, solution) {
     content.append(svgElement('path', {d: matches.join(''), class: 'sky-match'}));
     drawObjects(content, projection, solution.objects || []);
     drawCompass(svg);
-    return figure(svg, `${formatAngle(2 * radius)} across: ${stars.length / 3} stars of ${catalog.catalog}, `
-        + `the ${solution.matches.length} matched ones circled.`);
+    return figure(svg, t('charts.field', {size: formatAngle(2 * radius), stars: formatNumber(stars.length / 3), catalog: catalog.catalog,
+        matched: formatNumber(solution.matches.length)}));
 }
 
 /** The charts of a solution, which are filled when the data is loaded. */
 function chartsView(solution) {
     const view = document.createElement('div');
     view.className = 'charts';
-    view.textContent = 'Drawing the charts…';
+    view.textContent = t('charts.drawing');
     sky().then(async data => {
         const locator = locatorChart(data, solution);
         view.replaceChildren(locator);
@@ -318,10 +319,10 @@ function chartsView(solution) {
             const field = await fieldChart(data, solution);
             if (field !== null) view.append(field);
         } catch (e) {
-            view.append(figure(svgElement('svg', {}), `No star chart: ${e.message}`));
+            view.append(figure(svgElement('svg', {}), t('charts.noStarChart', {error: e.message})));
         }
     }).catch(e => {
-        view.textContent = `No charts: ${e.message}`;
+        view.textContent = t('charts.none', {error: e.message});
     });
     return view;
 }

@@ -44,6 +44,7 @@ header {
 }
 
 h1 { font-size: 1.4rem; margin: 0; }
+#language { margin-left: auto; align-self: center; }
 h2 { font-size: 1.15rem; margin: 0 0 1rem; }
 
 main {
@@ -87,6 +88,50 @@ legend { font-weight: 600; margin-bottom: 0.5rem; }
 
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9em; }
 label.check { flex-direction: row; align-items: center; grid-column: span 2; }
+.label-row { display: flex; align-items: center; gap: 0.35rem; }
+
+/* a "?" which explains a parameter, on hover, or once focused, which a tap does */
+.help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-left: 0.3rem;
+    border: 1px solid var(--muted);
+    border-radius: 50%;
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: help;
+}
+.label-row .help { margin-left: 0; }
+.help:hover, .help:focus { border-color: var(--accent); color: var(--accent); outline: none; }
+.help-text {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(20rem, 80vw);
+    padding: 0.5rem 0.7rem;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    font-size: 0.85rem;
+    font-weight: normal;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+}
+.help:hover .help-text, .help:focus .help-text { display: block; }
 .inline-button { display: flex; align-items: flex-end; }
 #port-state { grid-column: 1 / -1; }
 #port-state.error { color: var(--error); }
