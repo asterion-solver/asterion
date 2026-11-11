@@ -63,15 +63,18 @@ public final class WebServer implements AutoCloseable {
     private static final double MAX_CHART_RADIUS_DEG = 30;
     /** The largest radius of the charts of the deep sky objects around a solution, which the page can zoom out to. */
     private static final double MAX_OBJECTS_RADIUS_DEG = 90;
-    private static final Map<String, String> STATIC_FILES = Map.of(
-            "/", "index.html",
-            "/index.html", "index.html",
-            "/app.js", "app.js",
-            "/charts.js", "charts.js",
-            "/skyview.js", "skyview.js",
-            "/style.css", "style.css",
-            "/sky.json", "sky.json",
-            "/api/openapi.yaml", "openapi.yaml");
+    private static final Map<String, String> STATIC_FILES = Map.ofEntries(
+            Map.entry("/", "index.html"),
+            Map.entry("/index.html", "index.html"),
+            Map.entry("/i18n.js", "i18n.js"),
+            Map.entry("/messages-en.js", "messages-en.js"),
+            Map.entry("/messages-fr.js", "messages-fr.js"),
+            Map.entry("/app.js", "app.js"),
+            Map.entry("/charts.js", "charts.js"),
+            Map.entry("/skyview.js", "skyview.js"),
+            Map.entry("/style.css", "style.css"),
+            Map.entry("/sky.json", "sky.json"),
+            Map.entry("/api/openapi.yaml", "openapi.yaml"));
 
     /** Solved images are kept for downloads: the last ones, for an hour, within a limit of disk space. */
     private static final int KEPT_IMAGES = 10;

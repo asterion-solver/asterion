@@ -12,13 +12,14 @@ function sexagesimal(value, hours) {
     const m = Math.floor(v);
     const s = (v - m) * 60;
     const pad = n => String(n).padStart(2, '0');
+    const seconds = digits => formatNumber(s, digits, {minimumIntegerDigits: 2});
     return hours
-        ? `${pad(d)}h ${pad(m)}m ${s.toFixed(2).padStart(5, '0')}s`
-        : `${negative ? '-' : '+'}${pad(d)}° ${pad(m)}′ ${s.toFixed(1).padStart(4, '0')}″`;
+        ? `${pad(d)}h ${pad(m)}m ${seconds(2)}s`
+        : `${negative ? '-' : '+'}${pad(d)}° ${pad(m)}′ ${seconds(1)}″`;
 }
 
 function size(bytes) {
-    return bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : (bytes / 1e6).toFixed(0) + ' MB';
+    return bytes >= 1e9 ? t('size.gigabytes', {value: formatNumber(bytes / 1e9, 1)}) : t('size.megabytes', {value: formatNumber(bytes / 1e6)});
 }
 
 function element(tag, text, className) {
@@ -67,8 +68,8 @@ const OTHER_GAIA_DENSITIES = [250, 750, 1500, 3000, 5000];
 
 function gaiaVariants(available) {
     const published = available.filter(name => name.startsWith('gaia-'));
-    const options = [...published.map(name => [name, 'published, already indexed']),
-        ...OTHER_GAIA_DENSITIES.map(n => `gaia-${n}`).filter(name => !published.includes(name)).map(name => [name, 'built from the Gaia servers'])];
+    const options = [...published.map(name => [name, t('gaia.published')]),
+        ...OTHER_GAIA_DENSITIES.map(n => `gaia-${n}`).filter(name => !published.includes(name)).map(name => [name, t('gaia.built')])];
     options.sort((a, b) => Number(a[0].slice(5)) - Number(b[0].slice(5)));
     $('gaia-variants').replaceChildren(...options.map(([name, label]) => {
         const option = element('option', label);
@@ -80,18 +81,18 @@ function gaiaVariants(available) {
 function catalogRow(name, description, installed, running) {
     const row = element('tr');
     row.append(element('td', name), element('td', description, 'muted'));
-    const status = running ? 'Installing…' : !installed ? 'Not installed'
-        : `${installed.enabled ? 'Installed' : 'Disabled'}, ${size(installed.size)}`;
+    const status = running ? t('catalog.installing') : !installed ? t('catalog.notInstalled')
+        : t(installed.enabled ? 'catalog.installed' : 'catalog.disabled', {size: size(installed.size)});
     row.append(element('td', status, installed && !installed.enabled ? 'muted' : undefined));
     const action = element('td', undefined, 'actions');
     if (!running) {
-        const button = element('button', installed ? 'Reinstall' : 'Install');
+        const button = element('button', t(installed ? 'button.reinstall' : 'button.install'));
         button.addEventListener('click', () => install(name));
         action.append(button);
         if (installed) {
             // a disabled catalog stays installed, but isn't used to solve
-            const toggle = element('button', installed.enabled ? 'Disable' : 'Enable');
-            toggle.title = installed.enabled ? 'Stop using this catalog to solve images, without removing it' : 'Use this catalog to solve images again';
+            const toggle = element('button', t(installed.enabled ? 'button.disable' : 'button.enable'));
+            toggle.title = t(installed.enabled ? 'catalog.disable.title' : 'catalog.enable.title');
             toggle.addEventListener('click', () => enable(name, !installed.enabled));
             action.append(' ', toggle);
         }
@@ -103,8 +104,9 @@ function catalogRow(name, description, installed, running) {
 function installationView(installation) {
     const view = element('div', undefined, 'installation');
     const title = installation.running
-        ? `Installing ${installation.name}: ${installation.step}`
-        : installation.error ? `Installing ${installation.name} failed: ${installation.error}` : `${installation.name} is installed`;
+        ? t('installation.running', {name: installation.name, step: installation.step})
+        : installation.error ? t('installation.failed', {name: installation.name, error: installation.error})
+            : t('installation.done', {name: installation.name});
     view.append(element('div', title, installation.error ? 'status error' : installation.running ? 'status' : 'status ok'));
     if (installation.running) {
         const progress = element('progress');
@@ -172,7 +174,7 @@ async function pickImage() {
         const [handle] = await window.showOpenFilePicker({
             id: 'asterion-images',
             types: [{
-                description: 'Images',
+                description: t('picker.images'),
                 accept: {
                     'image/fits': ['.fits', '.fit', '.fts', '.fz'],
                     'image/png': ['.png'],
@@ -196,7 +198,7 @@ async function pickImage() {
         }
         // a file the picker can't open, such as a link: the standard dialog can
         usePicker = false;
-        $('drop-text').textContent = `The browser couldn't open that file (${e.message}): click again to use the standard dialog, which can`;
+        $('drop-text').textContent = t('picker.failed', {error: e.message});
     }
 }
 
@@ -219,7 +221,7 @@ async function solveOpened() {
         transfer.items.add(new File([blob], name, {type: blob.type}));
         $('file').files = transfer.files;
     } catch (e) {
-        $('drop-text').textContent = `The image given to Asterion couldn't be read: ${e.message}`;
+        $('drop-text').textContent = t('opened.failed', {error: e.message});
         return;
     }
     showFile();
@@ -227,13 +229,40 @@ async function solveOpened() {
 }
 
 function showFile() {
-    const file = $('file').files[0];
-    $('drop-text').textContent = file ? `${file.name} (${size(file.size)})` : 'Drop an image here, or click to choose one';
+    showFileName();
     // the result on display is the one of the previous image, which would be taken for the one of this image
     selection++;
+    shown = null;
     const result = $('result');
     result.hidden = true;
     result.replaceChildren();
+}
+
+function showFileName() {
+    const file = $('file').files[0];
+    $('drop-text').textContent = file ? t('drop.file', {name: file.name, size: size(file.size)}) : t('drop.prompt');
+}
+
+/** The result on display, and the file it's for, which the page shows again when the language changes. */
+let shown = null;
+
+/** Shows the answer to a solve, a result or an error. */
+function showResult(file, data, ok) {
+    shown = {file, data, ok};
+    const result = $('result');
+    const views = ok ? resultView(data) : [element('div', data.error, 'status error')];
+    result.replaceChildren(...views);
+    if (ok) {
+        // the image on the sky view of a solution, or below the status, unless another result is shown meanwhile
+        picture(file, data).then(p => {
+            if (!p || !result.contains(views[0])) return;
+            if (data.solved) {
+                result.querySelectorAll('.sky-view').forEach(view => view.dispatchEvent(new CustomEvent('picture', {detail: p})));
+            } else {
+                views[0].after(thumbnailView(p));
+            }
+        });
+    }
 }
 
 $('solve-form').addEventListener('submit', async event => {
@@ -252,32 +281,23 @@ $('solve-form').addEventListener('submit', async event => {
     const result = $('result');
     const solved = selection;
     button.disabled = true;
-    button.textContent = 'Solving…';
+    button.dataset.i18n = 'button.solving';
+    button.textContent = t('button.solving');
+    shown = null;
     result.hidden = false;
-    result.replaceChildren(element('div', `Uploading and solving ${file.name}…`, 'muted'));
+    result.replaceChildren(element('div', t('solve.uploading', {name: file.name}), 'muted'));
     try {
         const response = await fetch('api/solve?' + query, {method: 'POST', body: file});
         const data = await response.json();
         if (solved !== selection) return;
-        const views = response.ok ? resultView(data) : [element('div', data.error, 'status error')];
-        result.replaceChildren(...views);
-        if (response.ok) {
-            // the image on the sky view of a solution, or below the status, unless another image was submitted meanwhile
-            picture(file, data).then(p => {
-                if (!p || !result.contains(views[0])) return;
-                if (data.solved) {
-                    result.querySelectorAll('.sky-view').forEach(view => view.dispatchEvent(new CustomEvent('picture', {detail: p})));
-                } else {
-                    views[0].after(thumbnailView(p));
-                }
-            });
-        }
+        showResult(file, data, response.ok);
     } catch (e) {
         if (solved !== selection) return;
         result.replaceChildren(e instanceof TypeError ? unreachableView() : element('div', String(e), 'status error'));
     } finally {
         button.disabled = false;
-        button.textContent = 'Solve';
+        button.dataset.i18n = 'button.solve';
+        button.textContent = t('button.solve');
     }
 });
 
@@ -289,12 +309,12 @@ let savedPort = null;
  * The web interface was stopped, or it was restarted on the port saved in its options.
  */
 function unreachableView() {
-    const view = element('div', 'The web interface doesn\'t answer at this address: it was stopped, or restarted on another port. ', 'status error');
+    const view = element('div', t('unreachable.message'), 'status error');
     if (savedPort && String(savedPort) !== location.port) {
         const address = `${location.protocol}//${location.hostname}:${savedPort}/`;
         const link = element('a', address);
         link.href = address;
-        view.append('Its saved port is ' + savedPort + ': ', link);
+        view.append(t('unreachable.port', {port: savedPort}), link);
     }
     return view;
 }
@@ -465,12 +485,14 @@ function hmsLabel(ra, step) {
 
 function resultView(data) {
     const views = [];
-    const time = `${data.timing.totalMillis.toFixed(0)} ms (read ${data.timing.readMillis.toFixed(0)}, detect ${data.timing.detectMillis.toFixed(0)}, solve ${data.timing.solveMillis.toFixed(0)})`;
+    const timing = data.timing;
+    const time = t('result.time', {total: formatNumber(timing.totalMillis), read: formatNumber(timing.readMillis),
+        detect: formatNumber(timing.detectMillis), solve: formatNumber(timing.solveMillis)});
     if (!data.solved) {
-        views.push(element('div', `No solution found in ${time}, with ${data.stars} stars`, 'status error'));
+        views.push(element('div', t('result.unsolved', {time, stars: formatNumber(data.stars)}), 'status error'));
         return views;
     }
-    views.push(element('div', `Solved in ${time}`, 'status ok'));
+    views.push(element('div', t('result.solved', {time}), 'status ok'));
     views.push(skyView(data));
     views.push(objectsView(data.objects || []));
     const metrics = element('div', undefined, 'metrics');
@@ -479,18 +501,18 @@ function resultView(data) {
         m.prepend(element('span', label));
         metrics.append(m);
     };
-    metric('Constellation', data.constellation.name);
-    metric('Right ascension', `${sexagesimal(data.ra, true)} (${data.ra.toFixed(5)}°)`);
-    metric('Declination', `${sexagesimal(data.dec, false)} (${data.dec.toFixed(5)}°)`);
-    metric('Scale', `${data.scale.toFixed(4)} ″/px`);
-    metric('Field', `${data.fieldWidth.toFixed(3)}° × ${data.fieldHeight.toFixed(3)}°`);
-    metric('Rotation', `${data.rotation.toFixed(3)}° east of north${data.flipped ? ', flipped' : ''}`);
+    metric(t('metric.constellation'), data.constellation.name);
+    metric(t('metric.ra'), `${sexagesimal(data.ra, true)} (${formatNumber(data.ra, 5)}°)`);
+    metric(t('metric.dec'), `${sexagesimal(data.dec, false)} (${formatNumber(data.dec, 5)}°)`);
+    metric(t('metric.scale'), `${formatNumber(data.scale, 4)} ″/px`);
+    metric(t('metric.field'), `${formatNumber(data.fieldWidth, 3)}° × ${formatNumber(data.fieldHeight, 3)}°`);
+    metric(t('metric.rotation'), t(data.flipped ? 'rotation.flipped' : 'rotation.value', {angle: formatNumber(data.rotation, 3)}));
     if (data.focalLength !== undefined) {
-        metric('Focal length', `${data.focalLength.toFixed(0)} mm (${data.pixelSize.toFixed(2)} µm pixels)`);
+        metric(t('metric.focalLength'), t('focalLength.value', {focalLength: formatNumber(data.focalLength), pixelSize: formatNumber(data.pixelSize, 2)}));
     }
-    metric('Stars', `${data.matchedStars} matched out of ${data.stars}`);
-    metric('Residuals', `${data.rmsArcsec.toFixed(2)}″ RMS, FWHM ${data.fwhmArcsec.toFixed(1)}″`);
-    metric('Catalog', data.index);
+    metric(t('metric.stars'), t('stars.value', {matched: formatNumber(data.matchedStars), stars: formatNumber(data.stars)}));
+    metric(t('metric.residuals'), t('residuals.value', {rms: formatNumber(data.rmsArcsec, 2), fwhm: formatNumber(data.fwhmArcsec, 1)}));
+    metric(t('metric.catalog'), data.index);
     views.push(metrics);
     views.push(chartsView(data));
     const table = element('table', undefined, 'wcs');
@@ -500,7 +522,7 @@ function resultView(data) {
         table.append(row);
     }
     const details = element('details');
-    details.append(element('summary', 'WCS keywords'), table);
+    details.append(element('summary', t('result.wcs')), table);
     views.push(details);
     views.push(downloadsView(data));
     return views;
@@ -510,20 +532,21 @@ function resultView(data) {
 function objectsView(objects) {
     const view = element('div', undefined, 'objects');
     if (objects.length === 0) {
-        view.append(element('span', 'No catalogued deep sky object in the field', 'muted'));
+        view.append(element('span', t('objects.none'), 'muted'));
         return view;
     }
-    const shown = objects.slice(0, 5);
-    view.append(element('span', 'Contains '));
-    shown.forEach((o, i) => {
+    const listed = objects.slice(0, 5);
+    view.append(element('span', t('objects.contains')));
+    listed.forEach((o, i) => {
         const name = element('span', o.label, 'object');
-        name.title = `${o.type}, ${o.distance.toFixed(2)}° from the center` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '')
-            + (o.aliases ? `; also ${o.aliases}` : '');
+        name.title = t('object.title', {type: objectType(o.type), distance: formatNumber(o.distance, 2)})
+            + (o.majorArcmin ? t('object.size', {size: formatAngle(o.majorArcmin / 60)}) : '')
+            + (o.aliases ? t('object.aliases', {aliases: o.aliases}) : '');
         view.append(i > 0 ? ', ' : '', name);
     });
-    if (objects.length > shown.length) {
-        const more = element('span', ` and ${objects.length - shown.length} more`, 'muted');
-        more.title = objects.slice(shown.length).map(o => o.label).join(', ');
+    if (objects.length > listed.length) {
+        const more = element('span', tn('objects.more', objects.length - listed.length), 'muted');
+        more.title = objects.slice(listed.length).map(o => o.label).join(', ');
         view.append(more);
     }
     return view;
@@ -532,7 +555,7 @@ function objectsView(objects) {
 /** The files of a solution: the image with its solution, its header, the matched stars, the result. */
 function downloadsView(data) {
     const view = element('div', undefined, 'downloads');
-    view.append(element('span', 'Download', 'muted'));
+    view.append(element('span', t('downloads.label'), 'muted'));
     const download = data.download || {};
     const link = (format, label, title) => {
         const a = element('a', label, 'button');
@@ -542,18 +565,18 @@ function downloadsView(data) {
         view.append(a);
     };
     if (download.fits) {
-        link('fits', 'Solved FITS', 'The image, with the solution in its header');
+        link('fits', t('download.fits'), t('download.fits.title'));
     }
     if (download.id) {
-        link('wcs', 'WCS header (.wcs)', 'The solution as a FITS header without data, like the .wcs files of astrometry.net');
-        link('csv', 'Matched stars (.csv)', 'The stars of the image which were matched with the catalog: pixel and sky positions, residuals');
+        link('wcs', t('download.wcs'), t('download.wcs.title'));
+        link('csv', t('download.csv'), t('download.csv.title'));
     }
-    const json = element('button', 'Result (.json)');
-    json.title = 'This result, as the JSON output of the command line tool';
+    const json = element('button', t('download.json'));
+    json.title = t('download.json.title');
     json.addEventListener('click', () => save(new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}), baseName(data.image) + '.json'));
     view.append(json);
     if (download.id && !download.fits) {
-        view.append(element('div', 'The image isn\'t a FITS file: its solution can be downloaded as a FITS header.', 'muted'));
+        view.append(element('div', t('download.notFits'), 'muted'));
     }
     return view;
 }
@@ -572,10 +595,10 @@ async function loadAstap() {
     $('astap-name').textContent = data.targetName;
     $('astap-cli').textContent = data.executableName;
     $('astap-directory').textContent = data.directory;
-    $('astap-state').replaceChildren(element('div', data.installed
-        ? `Installed: ${data.target}${data.link ? ' (a link to ' + data.executableName + ')' : ''}`
-        : 'Not installed', data.installed ? 'status ok' : 'status'));
-    $('astap-install').textContent = (data.installed ? 'Reinstall ' : 'Install ') + data.targetName;
+    $('astap-state').replaceChildren(element('div', !data.installed ? t('astap.notInstalled')
+        : t(data.link ? 'astap.installedLink' : 'astap.installed', {target: data.target, executable: data.executableName}),
+        data.installed ? 'status ok' : 'status'));
+    $('astap-install').textContent = t(data.installed ? 'astap.reinstall' : 'astap.install', {name: data.targetName});
 }
 
 $('astap-install').addEventListener('click', async () => {
@@ -602,12 +625,12 @@ function showSettings(settings, saved) {
     state.classList.remove('error');
     const address = port => `${location.protocol}//${location.hostname}:${port}/`;
     if (settings.portFromCommandLine) {
-        state.textContent = (saved ? `Saved: port ${settings.port} will be used when the web interface starts without the --port option. ` : '')
-            + `It was started with --port ${settings.currentPort}, which takes precedence.`;
+        state.textContent = (saved ? t('settings.savedForStart', {port: settings.port}) : '')
+            + t('settings.commandLine', {port: settings.currentPort});
     } else if (settings.restartNeeded) {
-        state.textContent = `Saved: restart the web interface to use port ${settings.port}. It will then be at ${address(settings.port)}`;
+        state.textContent = t('settings.restart', {port: settings.port, address: address(settings.port)});
     } else {
-        state.textContent = saved ? `Saved: the web interface already uses port ${settings.port}.` : '';
+        state.textContent = saved ? t('settings.current', {port: settings.port}) : '';
     }
 }
 
@@ -629,6 +652,17 @@ $('port-save').addEventListener('click', async () => {
         $('port-state').textContent = data.error;
         $('port-state').classList.add('error');
     }
+});
+
+languageMenu($('language'));
+localize();
+// what the page made with messages is made again in the new language
+onLanguageChange(() => {
+    if ($('file').files[0]) showFileName();
+    if (shown) showResult(shown.file, shown.data, shown.ok);
+    loadCatalogs();
+    loadAstap();
+    loadSettings();
 });
 
 loadCatalogs();

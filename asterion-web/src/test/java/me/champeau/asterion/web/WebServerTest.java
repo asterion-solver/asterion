@@ -34,10 +34,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -88,10 +90,16 @@ class WebServerTest {
         assertEquals(200, page.statusCode());
         assertTrue(page.headers().firstValue("Content-Type").orElseThrow().startsWith("text/html"));
         assertTrue(page.body().contains("<title>Asterion Solver</title>"));
-        assertEquals(200, get("/app.js").statusCode());
-        assertEquals(200, get("/charts.js").statusCode());
-        assertEquals(200, get("/skyview.js").statusCode());
-        assertEquals(200, get("/style.css").statusCode());
+        // the scripts and the style sheet of the page
+        var files = Pattern.compile("(?:src|href)=\"([a-z0-9-]+\\.(?:js|css))\"").matcher(page.body()).results()
+                .map(m -> m.group(1))
+                .toList();
+        assertTrue(
+                files.containsAll(List.of("i18n.js", "messages-en.js", "messages-fr.js", "app.js", "charts.js", "skyview.js", "style.css")),
+                files::toString);
+        for (var file : files) {
+            assertEquals(200, get("/" + file).statusCode(), file);
+        }
         var sky = get("/sky.json");
         assertEquals(200, sky.statusCode());
         assertTrue(sky.headers().firstValue("Content-Type").orElseThrow().startsWith("application/json"));

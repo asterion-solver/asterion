@@ -58,11 +58,12 @@ function viewLabelWidth(text) {
  */
 function skyView(solution) {
     const diagonal = Math.hypot(solution.fieldWidth, solution.fieldHeight);
-    // the radius of a view where the image is at its largest zoom
-    const minRadius = () => {
+    // the radius of a view where the image has a zoom, at its center, and the one of its largest zoom
+    const radiusAt = zoom => {
         const {width, height} = projection;
-        return 2 * Math.atan((Math.min(width, height) / 2 - 4) * solution.scale * RAD / 3600 / (2 * MAX_ZOOM)) / RAD;
+        return 2 * Math.atan((Math.min(width, height) / 2 - 4) * solution.scale * RAD / 3600 / (2 * zoom)) / RAD;
     };
+    const minRadius = () => radiusAt(MAX_ZOOM);
     const state = {ra: solution.ra, dec: solution.dec, radius: null, imageUp: true};
 
     const view = element('figure', undefined, 'sky-view');
@@ -92,32 +93,37 @@ function skyView(solution) {
         controls.append(label);
         return input;
     };
-    button('−', 'Zoom out', () => zoom(ZOOM_STEP, center()));
-    button('+', 'Zoom in', () => zoom(1 / ZOOM_STEP, center()));
-    button('Fit', 'Back to the image, which fills the view', () => {
+    button('−', t('view.zoomOut'), () => zoom(ZOOM_STEP, center()));
+    button('+', t('view.zoomIn'), () => zoom(1 / ZOOM_STEP, center()));
+    button(t('view.fit'), t('view.fit.title'), () => {
         state.ra = solution.ra;
         state.dec = solution.dec;
         state.radius = null;
         schedule();
     });
-    const orientationButton = button('North up', 'Turn the view so that north is up, or the image upright', () => {
-        state.imageUp = !state.imageUp;
-        orientationButton.textContent = state.imageUp ? 'North up' : 'Image up';
+    button(t('view.actualSize'), t('view.actualSize.title'), () => {
+        if (!projection) return;
+        state.radius = Math.min(MAX_VIEW_RADIUS, radiusAt(1));
         schedule();
     });
-    const showImage = checkbox('Image', 'Show the image', true);
+    const orientationButton = button(t('view.northUp'), t('view.orientation.title'), () => {
+        state.imageUp = !state.imageUp;
+        orientationButton.textContent = t(state.imageUp ? 'view.northUp' : 'view.imageUp');
+        schedule();
+    });
+    const showImage = checkbox(t('view.image'), t('view.image.title'), true);
     showImage.disabled = true;
-    const showAnnotations = checkbox('Annotations', 'Show the coordinates, the constellations and the deep sky objects', true);
-    const saveViewButton = button('Save view (.jpg)', 'The view as it is, at the resolution of the image where it shows it',
+    const showAnnotations = checkbox(t('view.annotations'), t('view.annotations.title'), true);
+    const saveViewButton = button(t('view.saveView'), t('view.saveView.title'),
         () => saving(saveViewButton, () => renderView(projection, thumbnail && showImage.checked ? thumbnail : null, decodeFull, svg, stage, solution),
             '.view.jpg'));
-    const saveImageButton = button('Save annotated image (.jpg)', 'The whole image at its size, with its annotations',
+    const saveImageButton = button(t('view.saveImage'), t('view.saveImage.title'),
         () => saving(saveImageButton, () => renderImage(solution, thumbnail, decodeFull, showAnnotations.checked, skyData, stage), '.annotated.jpg'));
     saveImageButton.disabled = true;
     const zoomLevel = element('span', undefined, 'muted sky-zoom');
-    zoomLevel.title = 'The pixels of the screen for each pixel of the image';
+    zoomLevel.title = t('view.zoom.title');
     controls.append(zoomLevel);
-    const failure = element('div', 'The browser couldn\'t make the image: it may be too large for it.', 'muted');
+    const failure = element('div', t('view.failure'), 'muted');
     failure.hidden = true;
     const caption = element('figcaption');
     view.append(stage, controls, failure, caption);
@@ -262,10 +268,10 @@ function skyView(solution) {
         } else {
             svg.replaceChildren();
         }
-        zoomLevel.textContent = `Zoom ${formatZoom(zoomOf(projection, solution))}` + (loading ? ', loading the image at its size' : '');
-        caption.textContent = `${formatAngle(2 * state.radius)} across, centered on ${sexagesimal(state.ra, true)} ${sexagesimal(state.dec, false)}`
-            + (showAnnotations.checked && fetched ? `, ${shown} deep sky object${shown === 1 ? '' : 's'} shown` : '')
-            + '. Drag to move, wheel or pinch to zoom.';
+        zoomLevel.textContent = t(loading ? 'view.loading' : 'view.zoom', {zoom: formatZoom(zoomOf(projection, solution))});
+        caption.textContent = t('view.caption', {size: formatAngle(2 * state.radius), ra: sexagesimal(state.ra, true), dec: sexagesimal(state.dec, false)})
+            + (showAnnotations.checked && fetched ? tn('view.objects', shown) : '')
+            + t('view.gestures');
     };
 
     // gestures: the position under the pointers stays under them
@@ -361,7 +367,7 @@ function fullScreenButton(view) {
     button.hidden = !document.fullscreenEnabled;
     const update = () => {
         const full = document.fullscreenElement === view;
-        button.title = full ? 'Leave the full screen' : 'Full screen';
+        button.title = t(full ? 'view.leaveFullScreen' : 'view.fullScreen');
         button.setAttribute('aria-label', button.title);
         const icon = svgElement('svg', {viewBox: '0 0 24 24', 'aria-hidden': 'true'});
         icon.append(svgElement('path', {d: full ? FULL_SCREEN_ICONS.exit : FULL_SCREEN_ICONS.enter}));
@@ -400,7 +406,8 @@ function zoomOf(projection, solution) {
 /** A zoom as a percentage, with two significant digits when it's small. */
 function formatZoom(zoom) {
     const percent = 100 * zoom;
-    return `${percent >= 10 ? Math.round(percent) : Number(percent.toPrecision(2))} %`;
+    const digits = percent >= 10 ? {maximumFractionDigits: 0} : {maximumSignificantDigits: 2};
+    return new Intl.NumberFormat(language, {style: 'percent', ...digits}).format(zoom);
 }
 
 /**
@@ -749,8 +756,8 @@ function drawViewObjects(content, projection, objects, taken) {
             ? svgElement('path', {d: outline.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('') + 'Z', class: 'sky-object'})
             : svgElement('circle', {cx: center[0], cy: center[1], r: 3, class: 'sky-object'});
         const label = svgElement('text', {x: (box[0] + box[2]) / 2, y: box[3] - 3, class: 'sky-object-label'}, o.name);
-        const title = `${o.label}: ${o.type}` + (o.majorArcmin ? `, ${formatAngle(o.majorArcmin / 60)} across` : '')
-            + (o.magnitude !== undefined ? `, magnitude ${o.magnitude}` : '');
+        const title = `${o.label}: ${objectType(o.type)}` + (o.majorArcmin ? t('object.size', {size: formatAngle(o.majorArcmin / 60)}) : '')
+            + (o.magnitude !== undefined ? t('object.magnitude', {magnitude: formatNumber(o.magnitude, 0, {maximumFractionDigits: 2})}) : '');
         shape.append(svgElement('title', {}, title));
         label.append(svgElement('title', {}, title));
         content.append(shape, label);
