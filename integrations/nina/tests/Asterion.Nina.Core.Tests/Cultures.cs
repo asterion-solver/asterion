@@ -19,7 +19,7 @@ using Xunit;
 
 namespace Asterion.Nina.Core.Tests;
 
-/// <summary>Runs code with another culture, to check that what is given to asterion doesn't depend on it.</summary>
+/// <summary>Runs code with another culture, to check that what Asterion is given and tells doesn't depend on it.</summary>
 internal static class Cultures {
     /// <summary>
     /// Cultures which format numbers differently: French writes decimals with a comma, Arabic and

@@ -22,15 +22,17 @@ namespace Asterion.Nina;
 
 /// <summary>A catalog in the settings, with what can be done with it now.</summary>
 public sealed class CatalogItem {
-    public CatalogItem(Catalog catalog, bool busy, Func<Catalog, Task> download, Action<Catalog> remove) {
+    public CatalogItem(Catalog catalog, bool busy, Func<Catalog, Task> download, Func<Catalog, Task> remove) {
         Name = catalog.Name;
         Description = catalog.Description;
         Installed = catalog.Installed;
         CanDownload = !catalog.Installed && !busy;
         CanRemove = catalog.Installed && !busy;
         Download = new Command(() => _ = download(catalog));
-        Remove = new Command(() => remove(catalog));
-        State = catalog.Installed ? $"installed, {Size(catalog.Size)}" : "not installed";
+        Remove = new Command(() => _ = remove(catalog));
+        State = !catalog.Installed ? "not installed"
+            : catalog.Error.Length > 0 ? $"installed, but can't be read: {catalog.Error}"
+            : $"installed, {Size(catalog.Size)}";
     }
 
     public string Name { get; }

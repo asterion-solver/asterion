@@ -233,7 +233,7 @@ The `Build` workflow runs for each push to `main`, each pull request, and on dem
 native executable on every platform, and uploads the archives as artifacts of the run, named
 `native-<platform>` (`native-windows-x86_64`, `native-osx-aarch_64`…), which are kept 90 days, with the native
 library, `library-<platform>`, and the wheel of the Python package, `wheel-<platform>`, which `pip install` takes. It then builds
-and tests the N.I.N.A. plugin with the Windows executable of the same run, and uploads it as `nina-plugin`. Nothing
+and tests the N.I.N.A. plugin with the Windows library of the same run, and uploads it as `nina-plugin`. Nothing
 is released. To test the Windows archive of the last build of `main`:
 
 ```
@@ -265,8 +265,9 @@ is kept. The name of the executable and of the archives is the `executableName` 
 Two properties help performance experiments on the native executables: `-PnativeMarch=native` tunes the code
 for the build machine (portable `compatibility` code by default), and `-PnativeExtraArgs="…"` passes other
 `native-image` options, such as `-H:-GenLoopSafepoints` or `--gc=epsilon`. Measure with fresh processes, one
-image at a time, as SharpCap or N.I.N.A. run the solver: a warm process is noticeably faster than a cold one,
-and JVM timings, even with the Graal JIT, don't transfer to the native executable.
+image at a time, as SharpCap runs the solver: a warm process is noticeably faster than a cold one, and JVM
+timings, even with the Graal JIT, don't transfer to the native executable. The N.I.N.A. plugin is the warm case:
+it keeps the library loaded, and its catalogs open, between solves.
 
 To check the release configuration locally, put archives named like the ones of the workflow in an
 `artifacts` directory, the library archive included, and run:
@@ -295,7 +296,7 @@ the documentation of the library and the licenses.
 
 ### The N.I.N.A. plugin
 
-A release also publishes the N.I.N.A. plugin, `asterion-nina-<version>.zip`, built with the Windows executable of
+A release also publishes the N.I.N.A. plugin, `asterion-nina-<version>.zip`, built with the Windows library of
 the same run. N.I.N.A. users get it once its manifest is merged into the plugin repository of N.I.N.A.,
 [isbeorn/nina.plugin.manifests](https://github.com/isbeorn/nina.plugin.manifests), where its maintainers review
 it. Not every release matters to N.I.N.A. users, so it is proposed by hand: run the `N.I.N.A. plugin manifest`

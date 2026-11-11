@@ -31,8 +31,20 @@ asterion.install_catalog("tycho2", progress=lambda p: print(p.step, p.fraction))
 
 `tycho2` suits wide fields of view, and the Gaia catalogs, denser, smaller ones: their descriptions tell which
 fields each one is for. An installation can be cancelled, by its progress callback or with Ctrl-C, which takes
-effect at its next event, and the next installation resumes its download. A solver which uses a catalog is closed
-before the catalog is installed again.
+effect at its next event, and the next installation resumes its download. Events can be minutes apart, such as
+while the Gaia archives answer the queries of a catalog which is built: a `Cancellation`, which another thread
+cancels, such as the one of a user interface, stops the installation at once, as it stops a solve:
+
+```python
+cancellation = asterion.Cancellation()
+# the user interface calls cancellation.cancel(), on its own thread, when the user cancels
+try:
+    asterion.install_catalog("gaia-1500", cancellation=cancellation)
+except asterion.InstallationCancelled:
+    ...  # installing it again resumes its download
+```
+
+A solver which uses a catalog is closed before the catalog is installed again.
 
 ## Solving
 
@@ -121,10 +133,10 @@ conventions of FITS instead, where it's `(1, 1)`.
 | `DeepSkyObject` | `name`, `designation`, `type`, `common_name`, `aliases`, `messier`, `ra`, `dec`, `x`, `y`, `distance`, `major_arcmin`, `minor_arcmin`, `angle`, `magnitude` |
 | `Match` | `x`, `y`, `ra`, `dec`, `residual` |
 | `catalogs(directory=None)` | the catalogs which can be installed, then the other installed ones: a list of `Catalog` |
-| `install_catalog(name, directory=None, progress=None)` | installs a catalog, reporting its `Progress` |
+| `install_catalog(name, directory=None, progress=None, cancellation=None)` | installs a catalog, reporting its `Progress` |
 | `default_catalog_directory()` | the directory of the catalogs by default |
 | `version()` | the version of the solver |
-| `Cancellation()` | cancels solves from another thread, with `cancel()` |
+| `Cancellation()` | cancels solves and installations from another thread, with `cancel()` |
 | `AsterionError` | the errors of the solver; `InstallationCancelled` when an installation is cancelled, `SolveCancelled` when a solve is. Pixels which can't be read raise `ValueError` |
 
 The options of `solve`, all optional:

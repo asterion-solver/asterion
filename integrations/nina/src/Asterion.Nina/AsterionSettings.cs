@@ -31,14 +31,12 @@ using NINA.WPF.Base.Interfaces.Mediator;
 namespace Asterion.Nina;
 
 /// <summary>
-/// The settings of the plugin, kept in the profile of N.I.N.A.: the path of the asterion
-/// executable, empty to use the one of the plugin, and the directory of the catalogs, empty for the
-/// default one of asterion. It also shows what the executable answers, and manages the catalogs.
-/// There is a single instance, shared by the plugin and its solver, so that a download goes on
-/// whichever page shows it.
+/// The settings of the plugin, kept in the profile of N.I.N.A.: the directory of the catalogs, empty for the default
+/// one of Asterion, and the timeout of solves. It also shows the version of Asterion, manages the catalogs, and has the
+/// solver which the solves share, with the native library of Asterion which the plugin includes. There is a single
+/// instance, shared by the plugin and its solver, so that a download goes on whichever page shows it.
 /// </summary>
 public sealed class AsterionSettings : INotifyPropertyChanged {
-    private const string ExecutableKey = "ExecutablePath";
     private const string CatalogDirectoryKey = "CatalogDirectory";
     private const string TimeoutKey = "TimeoutSeconds";
     private static readonly Lock SharedLock = new();
@@ -46,6 +44,8 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
 
     private readonly IProfileService profileService;
     private readonly IApplicationStatusMediator statusMediator;
+    private readonly Lock solverLock = new();
+    private SharedSolver? solver;
     private int refreshes;
     private string status = "";
     private bool statusIsError;
@@ -55,17 +55,18 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
     private CancellationTokenSource? download;
     private string downloadStatus = "";
     private double? downloadFraction;
+    private int customDensity = 1500;
 
     private AsterionSettings(IProfileService profileService, IApplicationStatusMediator statusMediator) {
         this.profileService = profileService;
         this.statusMediator = statusMediator;
         profileService.ProfileChanged += (_, _) => {
-            OnPropertyChanged(nameof(ExecutablePath));
             OnPropertyChanged(nameof(CatalogDirectory));
             OnPropertyChanged(nameof(TimeoutSeconds));
             _ = RefreshAsync();
         };
-        CancelDownload = new Command(() => download?.Cancel());
+        CancelDownload = new Command(StopDownload);
+        InstallCustomDensity = new Command(() => _ = DownloadAsync(new Catalog(GaiaDensity.Name(customDensity), "", false, 0)));
         Refresh = new Command(() => _ = RefreshAsync());
         _ = RefreshAsync();
     }
@@ -82,17 +83,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
     private PluginOptionsAccessor Options =>
         new(profileService, PluginOptionsAccessor.GetAssemblyGuid(typeof(AsterionSettings)) ?? Guid.Empty);
 
-    /// <summary>The asterion executable, or empty to use the one of the plugin.</summary>
-    public string ExecutablePath {
-        get => Options.GetValueString(ExecutableKey, "");
-        set {
-            Options.SetValueString(ExecutableKey, value?.Trim() ?? "");
-            OnPropertyChanged();
-            _ = RefreshAsync();
-        }
-    }
-
-    /// <summary>The directory of the catalogs, or empty for the default one of asterion.</summary>
+    /// <summary>The directory of the catalogs, or empty for the default one of Asterion.</summary>
     public string CatalogDirectory {
         get => Options.GetValueString(CatalogDirectoryKey, "");
         set {
@@ -111,7 +102,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
         }
     }
 
-    /// <summary>The version of the executable, or why it doesn't run.</summary>
+    /// <summary>The version of Asterion, or why it can't run.</summary>
     public string Status {
         get => status;
         private set => Set(ref status, value);
@@ -150,34 +141,57 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
 
     public ICommand CancelDownload { get; }
 
+    /// <summary>The density of the catalog of Gaia DR3 to install besides the listed ones, in stars per square degree.</summary>
+    public int CustomDensity {
+        get => customDensity;
+        set {
+            Set(ref customDensity, value);
+            OnCustomDensityChanged();
+        }
+    }
+
+    /// <summary>What installing the catalog of <see cref="CustomDensity"/> does, and what it takes.</summary>
+    public string CustomDensityDescription =>
+        GaiaDensity.Describe(customDensity, catalogList?.Catalogs.Where(c => c.Published).Select(c => c.Name) ?? []);
+
+    public bool CanInstallCustomDensity => GaiaDensity.IsValid(customDensity) && !Downloading;
+
+    public ICommand InstallCustomDensity { get; }
+
     public ICommand Refresh { get; }
 
-    /// <summary>The directory of the plugin, where its own asterion executable is.</summary>
+    /// <summary>The directory of the plugin, where the native library of Asterion is.</summary>
     public static string PluginDirectory => Path.GetDirectoryName(typeof(AsterionSettings).Assembly.Location) ?? "";
 
-    /// <summary>
-    /// The executable to run, see <see cref="AsterionExecutable.Resolve"/>. N.I.N.A.'s own directory
-    /// provides the Visual C++ runtime that asterion needs on Windows.
-    /// </summary>
-    public AsterionExecutable Executable() => AsterionExecutable.Resolve(ExecutablePath, PluginDirectory, [AppContext.BaseDirectory]);
+    /// <summary>The directory of the catalogs, its environment variables expanded, or null for the default one.</summary>
+    public string? CatalogDirectoryPath => string.IsNullOrWhiteSpace(CatalogDirectory) ? null : Environment.ExpandEnvironmentVariables(CatalogDirectory.Trim());
 
     /// <summary>
-    /// Asks the executable for its version and its catalogs, and shows what it answers: a wrong
-    /// path is only reported.
+    /// The solver which the solves share, with the native library of the plugin, loaded the first time it's asked for.
+    /// N.I.N.A.'s own directory provides the Visual C++ runtime that the library needs.
     /// </summary>
+    /// <exception cref="AsterionException">if the library can't be loaded</exception>
+    public SharedSolver Solver() {
+        lock (solverLock) {
+            return solver ??= new SharedSolver(AsterionLibrary.Load(Path.Combine(PluginDirectory, "libasterion.dll")));
+        }
+    }
+
+    /// <summary>Asks Asterion for its version and its catalogs, and shows what it answers.</summary>
     public async Task RefreshAsync() {
         var refresh = Interlocked.Increment(ref refreshes);
+        var directory = CatalogDirectoryPath;
         string status;
         CatalogList? list = null;
         try {
-            var executable = Executable();
-            var version = await executable.VersionAsync(CancellationToken.None);
-            list = await executable.ListCatalogsAsync(CatalogDirectory, CancellationToken.None);
-            status = Describe(version, executable);
+            (status, list) = await Task.Run(() => {
+                var library = Solver().Library;
+                return ($"Asterion Solver {library.Version}, included in the plugin.", library.Catalogs(directory));
+            });
         } catch (AsterionException e) {
             status = e.Message;
         }
-        // the answer of an older refresh, such as one with a previous path
+        // the answer of an older refresh, such as one with a previous directory
         if (refresh != Volatile.Read(ref refreshes)) {
             return;
         }
@@ -187,18 +201,16 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
         UpdateCatalogs();
     }
 
-    /// <summary>The version which solves, and where it comes from when it isn't the one of the plugin.</summary>
-    private string Describe(string version, AsterionExecutable executable) {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(executable.Path));
-        if (string.Equals(directory, Path.GetFullPath(PluginDirectory).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)) {
-            return $"{version}, included in the plugin.";
-        }
-        return string.IsNullOrWhiteSpace(ExecutablePath) ? $"{version}, found on the PATH: {executable.Path}" : $"{version}, from {executable.Path}";
+    private void OnCustomDensityChanged() {
+        OnPropertyChanged(nameof(CustomDensityDescription));
+        OnPropertyChanged(nameof(CanInstallCustomDensity));
     }
 
     private void UpdateCatalogs() {
+        // the catalogs which are published, or a download which starts or stops, change what a density does
+        OnCustomDensityChanged();
         var list = catalogList;
-        Catalogs = list?.Catalogs.Select(c => new CatalogItem(c, Downloading, DownloadAsync, Remove)).ToList() ?? [];
+        Catalogs = list?.Catalogs.Select(c => new CatalogItem(c, Downloading, DownloadAsync, RemoveAsync)).ToList() ?? [];
         CatalogStatus = list == null ? ""
             : list.Catalogs.Any(c => c.Installed) ? $"The catalogs are in {list.Directory}."
             : "No catalog is installed: download one to solve images.";
@@ -217,7 +229,8 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
         var progress = new Progress<DownloadProgress>(p => ShowProgress(p.Message, p.Fraction));
         ShowProgress($"Downloading {catalog.Name}", null);
         try {
-            await Executable().DownloadCatalogAsync(catalog.Name, CatalogDirectory, progress, cancellation.Token);
+            var directory = CatalogDirectoryPath;
+            await Task.Run(() => Solver().InstallCatalog(catalog.Name, directory, progress, cancellation.Token));
             Notification.ShowSuccess($"Asterion: {catalog.Name} is installed");
         } catch (OperationCanceledException) {
             Notification.ShowInformation($"Asterion: the download of {catalog.Name} is cancelled. Downloading it again resumes where it stopped.");
@@ -230,6 +243,14 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
             DownloadStatus = "";
             statusMediator.StatusUpdate(new ApplicationStatus { Source = "Asterion", Status = string.Empty });
             await RefreshAsync();
+        }
+    }
+
+    /// <summary>Cancels the download, which stops a moment later: until then, the status tells that it stops.</summary>
+    private void StopDownload() {
+        if (download is { IsCancellationRequested: false } running) {
+            running.Cancel();
+            ShowProgress("Stopping the download", null);
         }
     }
 
@@ -247,7 +268,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
         });
     }
 
-    private void Remove(Catalog catalog) {
+    private async Task RemoveAsync(Catalog catalog) {
         var list = catalogList;
         if (list == null || Downloading) {
             return;
@@ -258,8 +279,10 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
             return;
         }
         try {
-            File.Delete(file);
-        } catch (Exception e) when (e is IOException or UnauthorizedAccessException) {
+            // the solver maps the catalogs, whose files Windows can't delete then: closing it waits for the solves
+            // which run, away from the thread of the interface
+            await Task.Run(() => Solver().RemoveCatalog(file));
+        } catch (Exception e) when (e is IOException or UnauthorizedAccessException or AsterionException) {
             Notification.ShowError($"Asterion: {catalog.Name} can't be removed: {e.Message}");
         }
         _ = RefreshAsync();

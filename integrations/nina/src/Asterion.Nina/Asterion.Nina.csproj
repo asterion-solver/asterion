@@ -23,25 +23,28 @@
   </ItemGroup>
   <!--
     The files of the plugin, without the assemblies which N.I.N.A. provides, in
-    bin/<configuration>/plugin. With -p:AsterionDistribution=<the unzipped Windows distribution of
-    Asterion>, it also has asterion.exe and its licenses, and is zipped as the plugin to publish.
+    bin/<configuration>/plugin. With -p:AsterionLibrary=<the directory of the Windows native library of
+    Asterion, libasterion.dll>, it also has the library, the license of Asterion and the notices of what
+    the library includes, and is zipped as the plugin to publish.
   -->
   <PropertyGroup>
     <PluginDirectory>$(MSBuildProjectDirectory)/bin/$(Configuration)/plugin/</PluginDirectory>
     <PluginZip>$(MSBuildProjectDirectory)/bin/$(Configuration)/asterion-nina-$(Version).zip</PluginZip>
+    <RepositoryDirectory>$(MSBuildProjectDirectory)/../../../../</RepositoryDirectory>
   </PropertyGroup>
   <Target Name="CollectPlugin" AfterTargets="Build">
     <ItemGroup>
       <PluginFile Include="$(OutDir)Asterion.Nina.dll;$(OutDir)Asterion.Nina.pdb;$(OutDir)Asterion.Nina.Core.dll;$(OutDir)Asterion.Nina.Core.pdb" />
-      <PluginFile Include="$(AsterionDistribution)/asterion.exe;$(AsterionDistribution)/LICENSE.txt" Condition="'$(AsterionDistribution)' != ''" />
-      <ThirdPartyFile Include="$(AsterionDistribution)/third-party/*" Condition="'$(AsterionDistribution)' != ''" />
+      <!-- the library, and the libraries of the JDK which native-image may write next to it -->
+      <PluginFile Include="$(AsterionLibrary)/*.dll;$(RepositoryDirectory)LICENSE.txt" Condition="'$(AsterionLibrary)' != ''" />
+      <ThirdPartyFile Include="$(RepositoryDirectory)third-party/*.md" Condition="'$(AsterionLibrary)' != ''" />
     </ItemGroup>
-    <Error Condition="'$(AsterionDistribution)' != '' And !Exists('$(AsterionDistribution)/asterion.exe')"
-           Text="There is no asterion.exe in $(AsterionDistribution)" />
+    <Error Condition="'$(AsterionLibrary)' != '' And !Exists('$(AsterionLibrary)/libasterion.dll')"
+           Text="There is no libasterion.dll in $(AsterionLibrary)" />
     <RemoveDir Directories="$(PluginDirectory)" />
     <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(PluginDirectory)" />
     <Copy SourceFiles="@(ThirdPartyFile)" DestinationFolder="$(PluginDirectory)third-party" />
-    <ZipDirectory Condition="'$(AsterionDistribution)' != ''" SourceDirectory="$(PluginDirectory)" DestinationFile="$(PluginZip)" Overwrite="true" />
-    <Message Importance="high" Condition="'$(AsterionDistribution)' != ''" Text="Asterion.Nina -> $(PluginZip)" />
+    <ZipDirectory Condition="'$(AsterionLibrary)' != ''" SourceDirectory="$(PluginDirectory)" DestinationFile="$(PluginZip)" Overwrite="true" />
+    <Message Importance="high" Condition="'$(AsterionLibrary)' != ''" Text="Asterion.Nina -> $(PluginZip)" />
   </Target>
 </Project>

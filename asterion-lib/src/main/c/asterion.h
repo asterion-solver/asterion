@@ -194,7 +194,10 @@ typedef struct {
  */
 typedef int (*asterion_progress_callback)(const asterion_progress *progress, void *user_data);
 
-/* The flag which cancels asterion_solve_cancellable, which the program sets from another thread. */
+/*
+ * The flag which cancels asterion_solve_cancellable and asterion_install_catalog_cancellable, which the program
+ * sets from another thread.
+ */
 typedef const volatile int32_t *asterion_cancel_flag;
 
 /*
@@ -243,6 +246,16 @@ int asterion_catalogs(graal_isolatethread_t *thread, const char *directory, void
  */
 int asterion_install_catalog(graal_isolatethread_t *thread, const char *directory, const char *name,
                              asterion_progress_callback callback, void *user_data);
+
+/*
+ * Installs a catalog as asterion_install_catalog does, unless the program cancels it, from another thread: once
+ * the int32_t which cancel points to isn't 0, the installation stops as soon as it can, and the function returns
+ * ASTERION_CANCELLED; it doesn't start if it's set already. Unlike the callback, which is called only when there's
+ * progress, which can take minutes, the flag is read all along. The program sets it with an atomic or a volatile
+ * write, and it stays valid until the function returns. A cancel which is NULL never cancels.
+ */
+int asterion_install_catalog_cancellable(graal_isolatethread_t *thread, const char *directory, const char *name,
+                                         asterion_progress_callback callback, void *user_data, const volatile int32_t *cancel);
 
 /*
  * Opens a solver, with the catalogs which are installed in a directory: they stay memory mapped until

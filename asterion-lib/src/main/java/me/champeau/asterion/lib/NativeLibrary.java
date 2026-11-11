@@ -288,6 +288,24 @@ final class NativeLibrary {
     @CEntryPoint(name = "asterion_install_catalog")
     static int installCatalog(IsolateThread thread, @CConst CCharPointer catalogDirectory, @CConst CCharPointer name,
                               @CTypedef(name = "asterion_progress_callback") ProgressCallback callback, VoidPointer userData) {
+        return installCatalog(catalogDirectory, name, callback, userData, WordFactory.nullPointer());
+    }
+
+    /**
+     * Installs a catalog, as asterion_install_catalog does, unless the program cancels it from another thread.
+     *
+     * @param cancel an int32_t which the program sets to non-zero to cancel the installation, or NULL
+     * @return 0, ASTERION_CANCELLED or ASTERION_ERROR
+     */
+    @CEntryPoint(name = "asterion_install_catalog_cancellable")
+    static int installCatalogCancellable(IsolateThread thread, @CConst CCharPointer catalogDirectory, @CConst CCharPointer name,
+                                         @CTypedef(name = "asterion_progress_callback") ProgressCallback callback, VoidPointer userData,
+                                         @CTypedef(name = "asterion_cancel_flag") VoidPointer cancel) {
+        return installCatalog(catalogDirectory, name, callback, userData, cancel);
+    }
+
+    private static int installCatalog(CCharPointer catalogDirectory, CCharPointer name, ProgressCallback callback, VoidPointer userData,
+                                      VoidPointer cancel) {
         try {
             var directory = directory(catalogDirectory);
             if (name.isNull()) {
@@ -302,7 +320,9 @@ final class NativeLibrary {
             }
             try {
                 var listener = new Callback(callback, userData);
-                Installation.run(progress -> Catalogs.install(descriptor, directory, progress), listener, listener::cancelled);
+                var flag = cancelled(cancel);
+                Installation.run(progress -> Catalogs.install(descriptor, directory, progress), listener,
+                        () -> listener.cancelled() || flag.getAsBoolean());
                 return 0;
             } finally {
                 INSTALLING.remove(index);
@@ -427,11 +447,8 @@ final class NativeLibrary {
             }
             PlateSolver plateSolver = ObjectHandles.getGlobal().<Session>get(solver).solver();
             var solverOptions = options(options);
-            BooleanSupplier cancelled = () -> false;
+            var cancelled = cancelled(cancel);
             if (cancel.isNonNull()) {
-                // the program writes the flag from another thread: it's read as such
-                var flag = memory(cancel, Integer.BYTES);
-                cancelled = () -> (int) FLAG.getVolatile(flag, 0L) != 0;
                 solverOptions = solverOptions.toBuilder().cancellation(cancelled).build();
             }
             var type = SAMPLE_TYPES[sampleType - 1];
@@ -454,6 +471,16 @@ final class NativeLibrary {
         } catch (Throwable e) {
             return failure(e);
         }
+    }
+
+    /** Whether the program set a flag which cancels, which is never the case of NULL. */
+    private static BooleanSupplier cancelled(VoidPointer cancel) {
+        if (cancel.isNull()) {
+            return () -> false;
+        }
+        // the program writes the flag from another thread: it's read as such
+        var flag = memory(cancel, Integer.BYTES);
+        return () -> (int) FLAG.getVolatile(flag, 0L) != 0;
     }
 
     /** Frees a result: NULL is ignored, and so is what isn't a result, which this function can't report. */

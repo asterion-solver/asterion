@@ -5,7 +5,7 @@ Writes the manifest of a release of the plugin, for the N.I.N.A. plugin reposito
 .DESCRIPTION
 The manifest is written by tools/CreateManifest.ps1 of isbeorn/nina.plugin.manifests, which reads
 the metadata of the plugin assembly. That script describes a DLL, while the plugin is installed from
-the zip of the release, which contains asterion.exe too: the installer of the manifest is made the zip.
+the zip of the release, which contains the native library of Asterion too: the installer of the manifest is made the zip.
 Requires PowerShell 7.
 
 .EXAMPLE

@@ -4,6 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Asterion.Nina.Core</AssemblyName>
     <RootNamespace>Asterion.Nina.Core</RootNamespace>
+    <!-- the structures and the functions of the native library -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Asterion.Nina.Core.Tests" />

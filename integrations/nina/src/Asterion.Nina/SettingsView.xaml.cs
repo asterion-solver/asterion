@@ -20,7 +20,7 @@ using Microsoft.Win32;
 
 namespace Asterion.Nina;
 
-/// <summary>The settings of the plugin: the executable, the catalogs, and their downloads.</summary>
+/// <summary>The settings of the plugin: the catalogs, their downloads, and the advanced settings.</summary>
 public partial class SettingsView : UserControl {
     public SettingsView() {
         InitializeComponent();
@@ -33,20 +33,6 @@ public partial class SettingsView : UserControl {
         var dialog = new OpenFolderDialog { Title = "Select the directory of the catalogs" };
         if (dialog.ShowDialog() == true) {
             settings.CatalogDirectory = dialog.FolderName;
-        }
-    }
-
-    private void BrowseExecutable(object sender, RoutedEventArgs e) {
-        if (DataContext is not AsterionSettings settings) {
-            return;
-        }
-        var dialog = new OpenFileDialog {
-            Title = "Select the asterion executable",
-            Filter = "asterion.exe|asterion.exe|Executables|*.exe",
-            CheckFileExists = true
-        };
-        if (dialog.ShowDialog() == true) {
-            settings.ExecutablePath = dialog.FileName;
         }
     }
 }

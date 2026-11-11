@@ -17,15 +17,22 @@ package me.champeau.asterion.index;
 
 import me.champeau.asterion.catalog.StarData;
 import me.champeau.asterion.progress.ProgressListener;
+import me.champeau.asterion.progress.ProgressStep;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.SplittableRandom;
+import java.util.concurrent.CancellationException;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IndexBuilderTest {
@@ -54,6 +61,26 @@ class IndexBuilderTest {
         // the temporary files are deleted
         try (var files = Files.list(dir)) {
             assertEquals(2, files.count());
+        }
+    }
+
+    @Test
+    void aBuildWhichIsStoppedWhileItWritesLeavesNothing(@TempDir Path dir) {
+        var stopped = new CancellationException("The installation was cancelled");
+        var thrown = assertThrows(CancellationException.class, () -> IndexBuilder.build(randomSky(50_000), "test", IndexOptions.defaults(),
+                dir.resolve("stopped.astx"), new ProgressListener() {
+                    @Override
+                    public void started(ProgressStep step) {
+                        if (step.description().startsWith("Sorting quads")) {
+                            throw stopped;
+                        }
+                    }
+                }));
+        assertSame(stopped, thrown);
+        try (var files = Files.list(dir)) {
+            assertEquals(List.of(), files.toList());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 }

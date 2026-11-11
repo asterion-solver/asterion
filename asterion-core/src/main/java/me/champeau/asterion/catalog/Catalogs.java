@@ -21,14 +21,12 @@ import me.champeau.asterion.progress.ProgressListener;
 import me.champeau.asterion.progress.ProgressTracker;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.ForkJoinPool;
 import java.util.regex.Pattern;
 
 /**
@@ -78,7 +76,7 @@ public final class Catalogs {
      * using a name such as {@code gaia-1000} for 1000 stars per square degree.
      */
     public static List<Descriptor> available() {
-        return List.of(TYCHO2, new Gaia(500), new Gaia(1000), new Gaia(2000));
+        return List.of(TYCHO2, new Gaia(500), new Gaia(1000), new Gaia(2000), new Gaia(3000));
     }
 
     public static Optional<Descriptor> find(String name) {
@@ -232,18 +230,11 @@ public final class Catalogs {
             var files = Tycho2.files();
             // the CDS doesn't like too many simultaneous connections
             try (var downloader = new Downloader();
-                 var pool = new ForkJoinPool(4);
                  var tracker = ProgressTracker.start(progress, "Downloading Tycho-2 from " + Tycho2.BASE_URL, files.size(), "files")) {
-                pool.submit(() -> files.parallelStream().forEach(name -> {
-                    try {
-                        var size = downloader.download(Tycho2.BASE_URL + name, workDirectory.resolve(name));
-                        tracker.advance(1, size);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                })).join();
-            } catch (UncheckedIOException e) {
-                throw e.getCause();
+                ParallelDownloads.run(4, files.size(), i -> {
+                    var name = files.get(i);
+                    tracker.advance(1, downloader.download(Tycho2.BASE_URL + name, workDirectory.resolve(name)));
+                });
             }
             progress.info("Reading Tycho-2");
             return Tycho2.read(workDirectory);

@@ -4,7 +4,7 @@ name: N.I.N.A. plugin manifest
 # isbeorn/nina.plugin.manifests: the manifest is written from the plugin zip of the GitHub release, by
 # integrations/nina/New-NinaManifest.ps1, replaces the manifest of the previous release, is validated by the
 # scripts of that repository, then proposed with a pull request from a fork of it. It is run by hand, for the
-# releases which matter to N.I.N.A.: not every release changes the plugin, or the executable which it bundles,
+# releases which matter to N.I.N.A.: not every release changes the plugin, or the library which it bundles,
 # in a way that N.I.N.A. users need.
 #
 # The pull request needs the repository variable NINA_MANIFESTS_FORK, the fork, such as owner/nina.plugin.manifests,

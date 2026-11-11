@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-using System.IO;
 using Asterion.Nina.Core;
 using NINA.Astrometry;
-using NINA.Core.Enum;
 using NINA.Core.Model;
 using NINA.Core.Utility;
 using NINA.Core.Utility.Notification;
-using NINA.Image.FileFormat;
 using NINA.Image.Interfaces;
 using NINA.PlateSolving;
 using NINA.PlateSolving.Interfaces;
@@ -29,43 +26,39 @@ using NINA.PlateSolving.Interfaces;
 namespace Asterion.Nina;
 
 /// <summary>
-/// Solves an image of N.I.N.A. with asterion. N.I.N.A. gives the image in memory: it is written to
-/// a temporary FITS file, which asterion solves.
+/// Solves an image of N.I.N.A. with the native library of Asterion, which runs in the process of N.I.N.A.: the image
+/// N.I.N.A. has in memory is solved from its pixels, without writing a file.
 /// </summary>
 public sealed class AsterionPlateSolver : IPlateSolver {
-    private static readonly string WorkingDirectory = Path.Combine(CoreUtil.APPLICATIONTEMPPATH, "PlateSolver", "Asterion");
     private readonly AsterionSettings settings;
 
     public AsterionPlateSolver(AsterionSettings settings) {
         this.settings = settings;
     }
 
+    /// <summary>
+    /// Solves the image N.I.N.A. has in memory: its pixels go to the native library of Asterion as they are, on a
+    /// thread of the pool, which waits for the solution. Cancelling stops the search as soon as it can.
+    /// </summary>
     public async Task<PlateSolveResult> SolveAsync(IImageData source, PlateSolveParameter parameter, IProgress<ApplicationStatus> progress,
                                                    CancellationToken canceltoken) {
-        string? file = null;
         try {
-            var executable = settings.Executable();
-            Directory.CreateDirectory(WorkingDirectory);
-            progress?.Report(new ApplicationStatus { Status = "Asterion: saving the image" });
-            file = await source.SaveToDisk(new FileSaveInfo {
-                FilePath = WorkingDirectory,
-                FilePattern = Path.GetRandomFileName(),
-                FileType = FileTypeEnum.FITS
-            }, canceltoken, forceFileType: true);
-
             // the primary solver searches the region N.I.N.A. gives, the blind one the whole sky
             var coordinates = parameter.Coordinates;
-            var request = new SolveRequest(file, coordinates?.RADegrees, coordinates?.Dec, parameter.SearchRadius, settings.TimeoutSeconds,
-                settings.CatalogDirectory);
+            var options = new SolveOptions(coordinates?.RADegrees, coordinates?.Dec, parameter.SearchRadius, settings.TimeoutSeconds);
+            var (width, height, bayer) = (source.Properties.Width, source.Properties.Height, source.Properties.IsBayered);
+            var pixels = source.Data.FlatArray;
+            var directory = settings.CatalogDirectoryPath;
             progress?.Report(new ApplicationStatus { Status = coordinates == null ? "Asterion: blind solving" : "Asterion: solving" });
-            Logger.Info($"Asterion: solving with {executable.Path} {string.Join(" ", request.Arguments())}");
-            var solution = await executable.SolveAsync(request, canceltoken);
+            Logger.Info($"Asterion: solving {width} x {height} pixels{(bayer ? " of a color sensor" : "")}, "
+                        + (coordinates == null ? "blind" : $"around {coordinates.RADegrees:0.###} {coordinates.Dec:0.###}, {parameter.SearchRadius}°"));
+            var solution = await Task.Run(() => settings.Solver().Solve(directory, pixels, width, height, bayer, options, canceltoken), canceltoken);
             if (solution.Wcs is not { } wcs) {
                 Logger.Info($"Asterion: no solution found in {solution.TotalMillis:0} ms, with {solution.Stars} stars");
                 return new PlateSolveResult { Success = false };
             }
             Logger.Info($"Asterion: solved in {solution.TotalMillis:0} ms, {solution.MatchedStars} stars matched, RMS {solution.RmsArcsec:0.00}\"");
-            return Result(wcs, source.Properties.Width, source.Properties.Height);
+            return Result(wcs, width, height);
         } catch (AsterionException e) {
             Logger.Error($"Asterion: {e.Message}");
             if (!parameter.DisableNotifications) {
@@ -76,13 +69,6 @@ public sealed class AsterionPlateSolver : IPlateSolver {
             return new PlateSolveResult { Success = false };
         } finally {
             progress?.Report(new ApplicationStatus { Status = string.Empty });
-            if (file != null) {
-                try {
-                    File.Delete(file);
-                } catch (IOException e) {
-                    Logger.Error($"Asterion: {e.Message}");
-                }
-            }
         }
     }
 

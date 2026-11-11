@@ -2,7 +2,13 @@
   <PropertyGroup>
     <!-- runs on any platform -->
     <TargetFramework>net10.0</TargetFramework>
+    <!-- the structures of the native library, which the tests write -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- decodes the test images, whose pixels the tests give to the library -->
+    <PackageReference Include="StbImageSharp" Version="2.30.15" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Asterion.Nina.Core\Asterion.Nina.Core.csproj" />
   </ItemGroup>
