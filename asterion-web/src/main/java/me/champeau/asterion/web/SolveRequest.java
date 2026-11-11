@@ -15,6 +15,7 @@
  */
 package me.champeau.asterion.web;
 
+import me.champeau.asterion.image.DetectionOptions;
 import me.champeau.asterion.solver.Parity;
 import me.champeau.asterion.solver.Solution;
 import me.champeau.asterion.solver.SolutionJson;
@@ -96,7 +97,8 @@ final class SolveRequest {
                 .blindFallback(flag("blind", true))
                 .sipOrder((int) number("sipOrder", -1))
                 .timeout(Duration.ofMillis((long) (number("timeout", 30) * 1000)))
-                .binning((int) number("binning", 0));
+                .binning((int) number("binning", 0))
+                .detection(DetectionOptions.defaults().withThresholdSigma(number("sigma", 5)));
         var parity = parameters.get("parity");
         if (parity != null) {
             try {
