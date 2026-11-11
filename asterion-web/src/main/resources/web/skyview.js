@@ -4,7 +4,8 @@
 // constellations and a grid of coordinates, which can be moved and zoomed. It's dragged with the
 // mouse or a finger, and zoomed with the wheel, a pinch or its buttons. The projection is the
 // stereographic one of the other charts, centered on the middle of the view, turned so that the
-// image is upright as it was taken, or north up. The view can be saved as an image, as it is.
+// image is upright as it was taken, or north up. The view can be saved as an image, as it is, and so can
+// the whole image at its size, with its annotations.
 
 /** The largest radius of the view, in degrees. */
 const MAX_VIEW_RADIUS = 45;
@@ -18,6 +19,13 @@ const MESH_CELLS = 12;
 const VIEW_LABELS_INSIDE = 60;
 /** How much the buttons zoom. */
 const ZOOM_STEP = 1.5;
+/** The largest zoom on the image: the pixels of the screen for each pixel of the image. */
+const MAX_ZOOM = 8;
+/**
+ * The image is decoded at its size once the view shows more of its pixels than its picture has, by this
+ * factor: the picture is a thumbnail.
+ */
+const SHARPER = 1.1;
 /** The part of the view which the image fills when the view is fitted to it. */
 const FIT_MARGIN = 0.94;
 /** The size of the corner of the compass, in pixels. */
@@ -26,9 +34,18 @@ const COMPASS = 90;
 const FULL_SCREEN_BUTTON = 48;
 /** The icons of that button, drawn with a stroke in a 24 pixels square: to enter the full screen, and to leave it. */
 const FULL_SCREEN_ICONS = {enter: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5', exit: 'M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5'};
+/**
+ * The width of the layout of the annotations of a saved image, in pixels: they are drawn as on a view of
+ * this width, then scaled with the image, so that they keep their proportions whatever its size.
+ */
+const SAVED_LAYOUT_WIDTH = 1200;
+/** Images wider than this, in degrees along their diagonal, show the constellations when saved. */
+const SAVED_CONSTELLATIONS = 8;
 /** The largest saved images, which browsers can encode: their longest side, and their pixels. */
 const MAX_SAVED_SIDE = 8192;
 const MAX_SAVED_PIXELS = 64e6;
+/** The longest side of a saved image at its size: the one of the sensors of most cameras. */
+const MAX_SAVED_IMAGE_SIDE = 16384;
 
 /** The width of a label of the view, about: its font is 12 pixels high. */
 function viewLabelWidth(text) {
@@ -41,7 +58,11 @@ function viewLabelWidth(text) {
  */
 function skyView(solution) {
     const diagonal = Math.hypot(solution.fieldWidth, solution.fieldHeight);
-    const minRadius = Math.max(0.005, 0.05 * diagonal);
+    // the radius of a view where the image is at its largest zoom
+    const minRadius = () => {
+        const {width, height} = projection;
+        return 2 * Math.atan((Math.min(width, height) / 2 - 4) * solution.scale * RAD / 3600 / (2 * MAX_ZOOM)) / RAD;
+    };
     const state = {ra: solution.ra, dec: solution.dec, radius: null, imageUp: true};
 
     const view = element('figure', undefined, 'sky-view');
@@ -87,20 +108,43 @@ function skyView(solution) {
     const showImage = checkbox('Image', 'Show the image', true);
     showImage.disabled = true;
     const showAnnotations = checkbox('Annotations', 'Show the coordinates, the constellations and the deep sky objects', true);
-    const saveButton = button('Save view (.jpg)', 'The view as an image, at the resolution of the image where it shows it', () => saveView());
+    const saveViewButton = button('Save view (.jpg)', 'The view as it is, at the resolution of the image where it shows it',
+        () => saving(saveViewButton, () => renderView(projection, thumbnail && showImage.checked ? thumbnail : null, decodeFull, svg, stage, solution),
+            '.view.jpg'));
+    const saveImageButton = button('Save annotated image (.jpg)', 'The whole image at its size, with its annotations',
+        () => saving(saveImageButton, () => renderImage(solution, thumbnail, decodeFull, showAnnotations.checked, skyData, stage), '.annotated.jpg'));
+    saveImageButton.disabled = true;
+    const zoomLevel = element('span', undefined, 'muted sky-zoom');
+    zoomLevel.title = 'The pixels of the screen for each pixel of the image';
+    controls.append(zoomLevel);
     const failure = element('div', 'The browser couldn\'t make the image: it may be too large for it.', 'muted');
     failure.hidden = true;
     const caption = element('figcaption');
     view.append(stage, controls, failure, caption);
 
-    // the picture of the image, the positions on the sky of the vertices of its mesh, and whether its rows
-    // are bottom up, which turns the view of an upright image
+    // the picture of the image as {bitmap, bottomUp, mesh}: its bitmap, whether its rows are bottom up, which turns
+    // the view of an upright image, and the positions on the sky of the vertices of its mesh
     let picture = null;
-    let mesh = null;
+    let thumbnail = null;
+    // the image at its size in the same form, decoded once when the view or a saved image needs it, then drawn by the
+    // view: a promise of it or of null when the browser can't make it, and the image itself once decoded
+    let fullImage = null;
+    let full = null;
+    let loading = false;
+    const decodeFull = () => fullImage ??= picture.full()
+        .then(decoded => decoded && {...decoded, mesh: imageMesh(solution, decoded.bitmap, decoded.bottomUp)})
+        .catch(() => null)
+        .then(decoded => {
+            full = decoded;
+            loading = false;
+            schedule();
+            return decoded;
+        });
     view.addEventListener('picture', event => {
         picture = event.detail;
-        mesh = imageMesh(solution, picture.bitmap, picture.bottomUp);
+        thumbnail = {bitmap: picture.bitmap, bottomUp: picture.bottomUp, mesh: imageMesh(solution, picture.bitmap, picture.bottomUp)};
         showImage.disabled = false;
+        saveImageButton.disabled = false;
         schedule();
     });
 
@@ -155,7 +199,7 @@ function skyView(solution) {
                 const ys = points.map(q => q[1]);
                 const ratio = Math.max((Math.max(...xs) - Math.min(...xs)) / (FIT_MARGIN * width), (Math.max(...ys) - Math.min(...ys)) / (FIT_MARGIN * height));
                 if (!(ratio > 0)) break;
-                radius = Math.min(MAX_VIEW_RADIUS, Math.max(minRadius, radius * ratio));
+                radius = Math.min(MAX_VIEW_RADIUS, radius * ratio);
             }
             state.radius = radius;
         }
@@ -176,9 +220,10 @@ function skyView(solution) {
 
     const draw = () => {
         if (!view.isConnected && projection) {
-            // the result was replaced: the picture goes with it
+            // the result was replaced: the pictures go with it
             resize.disconnect();
             if (picture) picture.bitmap.close();
+            if (fullImage) fullImage.then(decoded => decoded && decoded.bitmap.close());
             return;
         }
         const {width, height} = stage.getBoundingClientRect();
@@ -190,8 +235,13 @@ function skyView(solution) {
         const context = canvas.getContext('2d');
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
         context.clearRect(0, 0, width, height);
-        if (mesh && showImage.checked) {
-            drawImageMesh(context, projection, picture.bitmap, mesh);
+        if (thumbnail && showImage.checked) {
+            drawImage(context, projection, solution, full || thumbnail);
+            // the view shows more pixels than the picture has: the image at its size is sharper
+            if (!fullImage && zoomOf(projection, solution) * ratio * imageSize(solution).width > SHARPER * thumbnail.bitmap.width) {
+                loading = true;
+                decodeFull();
+            }
         }
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         let shown = 0;
@@ -212,6 +262,7 @@ function skyView(solution) {
         } else {
             svg.replaceChildren();
         }
+        zoomLevel.textContent = `Zoom ${formatZoom(zoomOf(projection, solution))}` + (loading ? ', loading the image at its size' : '');
         caption.textContent = `${formatAngle(2 * state.radius)} across, centered on ${sexagesimal(state.ra, true)} ${sexagesimal(state.dec, false)}`
             + (showAnnotations.checked && fetched ? `, ${shown} deep sky object${shown === 1 ? '' : 's'} shown` : '')
             + '. Drag to move, wheel or pinch to zoom.';
@@ -221,7 +272,7 @@ function skyView(solution) {
     const center = () => [projection.cx, projection.cy];
     const zoom = (factor, [x, y]) => {
         if (!projection) return;
-        const radius = Math.min(MAX_VIEW_RADIUS, Math.max(minRadius, state.radius * factor));
+        const radius = Math.min(MAX_VIEW_RADIUS, Math.max(minRadius(), state.radius * factor));
         const f = radius / state.radius;
         [state.ra, state.dec] = projection.unproject(projection.cx + (x - projection.cx) * (1 - f), projection.cy + (y - projection.cy) * (1 - f));
         state.radius = radius;
@@ -259,7 +310,7 @@ function skyView(solution) {
         const g = gesture.projection;
         [state.ra, state.dec] = g.unproject(g.cx - (x - gesture.middle[0]), g.cy - (y - gesture.middle[1]));
         if (pointers.size >= 2 && gesture.spread > 0) {
-            state.radius = Math.min(MAX_VIEW_RADIUS, Math.max(minRadius, gesture.radius * gesture.spread / spread()));
+            state.radius = Math.min(MAX_VIEW_RADIUS, Math.max(minRadius(), gesture.radius * gesture.spread / spread()));
         }
         schedule();
     });
@@ -277,15 +328,15 @@ function skyView(solution) {
         zoom(Math.exp(Math.max(-1, Math.min(1, delta * 0.002))), point(event));
     }, {passive: false});
 
-    // the view as an image, at the resolution of the image where the view shows it
-    const saveView = async () => {
+    // saves the image which a function renders, its button disabled meanwhile
+    const saving = async (saveButton, render, suffix) => {
         if (!projection) return;
         saveButton.disabled = true;
         failure.hidden = true;
         try {
-            const blob = await renderView(projection, picture && showImage.checked ? picture : null, svg, stage, solution);
+            const blob = await render();
             if (blob) {
-                save(blob, baseName(solution.image) + '.annotated.jpg');
+                save(blob, baseName(solution.image) + suffix);
             } else {
                 failure.hidden = false;
             }
@@ -333,14 +384,61 @@ function fullScreenButton(view) {
     return button;
 }
 
+/** The size of a solved image, in pixels. */
+function imageSize(solution) {
+    return {width: Math.round(solution.fieldWidth * 3600 / solution.scale), height: Math.round(solution.fieldHeight * 3600 / solution.scale)};
+}
+
+/**
+ * The zoom of a view on its image: the pixels of the view for each pixel of the image, at the center of the view,
+ * where the projection has its scale.
+ */
+function zoomOf(projection, solution) {
+    return projection.scale * solution.scale * RAD / 3600;
+}
+
+/** A zoom as a percentage, with two significant digits when it's small. */
+function formatZoom(zoom) {
+    const percent = 100 * zoom;
+    return `${percent >= 10 ? Math.round(percent) : Number(percent.toPrecision(2))} %`;
+}
+
+/**
+ * The projection of a solved image on itself: a position of the sky is where the image shows it, through the
+ * WCS of its solution, scaled to a width; the same methods as the projection of a view, so that an image is
+ * annotated as a view is. Its center and radius, which the grid and the compass use, are the ones of the image.
+ */
+class ImageProjection extends Projection {
+    constructor(solution, width, bottomUp) {
+        const size = imageSize(solution);
+        const height = width * size.height / size.width;
+        super(solution.ra, solution.dec, Math.hypot(solution.fieldWidth, solution.fieldHeight) / 2, width, height);
+        this.wcs = wcsProjection(solution.wcs);
+        this.size = size;
+        this.k = width / size.width;
+        this.bottomUp = bottomUp;
+    }
+
+    project(ra, dec) {
+        const pixel = this.wcs.toPixel(ra, dec);
+        if (!pixel) return null;
+        // pixels are counted from 0 at their centers, as in the mesh of the image
+        const [x, y] = pixel;
+        return [(x + 0.5) * this.k, (this.bottomUp ? this.size.height - y - 0.5 : y + 0.5) * this.k];
+    }
+
+    unproject(x, y) {
+        return this.wcs.toSky(x / this.k - 0.5, this.bottomUp ? this.size.height - y / this.k - 0.5 : y / this.k - 0.5);
+    }
+}
+
 /**
  * The orientation which shows an image upright, as it was taken: from the directions of its axes on a chart
  * north up, at its center. Its rows are bottom up when the first row of the image is shown at the bottom.
  */
 function uprightOrientation(solution, bottomUp) {
     const wcs = wcsProjection(solution.wcs);
-    const width = Math.round(solution.fieldWidth * 3600 / solution.scale);
-    const height = Math.round(solution.fieldHeight * 3600 / solution.scale);
+    const {width, height} = imageSize(solution);
     const [x, y] = [(width - 1) / 2, (height - 1) / 2];
     const step = Math.max(1, Math.min(width, height) / 20);
     const north = new Projection(solution.ra, solution.dec, 1);
@@ -362,20 +460,22 @@ function uprightOrientation(solution, bottomUp) {
 
 /**
  * The mesh which deforms an image: the pixels of its picture at the vertices of a grid, and their positions on
- * the sky, computed once, as the distortion of the solution makes them costly.
+ * the sky, computed once for the whole image, as the distortion of the solution makes them costly, or for a region
+ * of the picture, [left, top, right, bottom].
  */
-function imageMesh(solution, image, bottomUp) {
+function imageMesh(solution, image, bottomUp, region = [0, 0, image.width, image.height]) {
     const wcs = wcsProjection(solution.wcs);
-    const width = Math.round(solution.fieldWidth * 3600 / solution.scale);
-    const height = Math.round(solution.fieldHeight * 3600 / solution.scale);
+    const {width, height} = imageSize(solution);
     const k = image.width / width;
-    const nx = width >= height ? MESH_CELLS : Math.max(1, Math.round(MESH_CELLS * width / height));
-    const ny = height >= width ? MESH_CELLS : Math.max(1, Math.round(MESH_CELLS * height / width));
+    const [u0, v0, u1, v1] = region;
+    const [w, h] = [u1 - u0, v1 - v0];
+    const nx = w >= h ? MESH_CELLS : Math.max(1, Math.round(MESH_CELLS * w / h));
+    const ny = h >= w ? MESH_CELLS : Math.max(1, Math.round(MESH_CELLS * h / w));
     const vertices = [];
     for (let j = 0; j <= ny; j++) {
         for (let i = 0; i <= nx; i++) {
-            const u = image.width * i / nx;
-            const v = image.height * j / ny;
+            const u = u0 + w * i / nx;
+            const v = v0 + h * j / ny;
             // from the pixels of the picture to the ones of the image
             const x = u / k - 0.5;
             const y = bottomUp ? height - v / k - 0.5 : v / k - 0.5;
@@ -385,9 +485,57 @@ function imageMesh(solution, image, bottomUp) {
     return {nx, ny, vertices};
 }
 
-/** Draws an image on the view: each cell of its mesh is two triangles, each stretched to where its vertices are. */
+/**
+ * Draws an image on a view, {bitmap, bottomUp, mesh}: through the mesh of the whole image when the view shows most
+ * of it, or through a mesh of the part which it shows when it's zoomed in, whose cells stay small on the view, so
+ * that the triangles which approximate the projection meet without seams.
+ */
+function drawImage(context, projection, solution, image) {
+    const region = visibleRegion(projection, solution, image);
+    const whole = image.bitmap.width * image.bitmap.height;
+    const mesh = region && (region[2] - region[0]) * (region[3] - region[1]) < whole / 4
+        ? imageMesh(solution, image.bitmap, image.bottomUp, region)
+        : image.mesh;
+    drawImageMesh(context, projection, image.bitmap, mesh);
+}
+
+/**
+ * The part of the picture of an image which a view shows, [left, top, right, bottom], with a margin: the box of the
+ * edges of the view on the picture, within it; null when the view is so wide that its edges aren't all on the
+ * image's side of the sky, or when it doesn't show the image.
+ */
+function visibleRegion(projection, solution, image) {
+    const wcs = wcsProjection(solution.wcs);
+    const {width, height} = imageSize(solution);
+    const k = image.bitmap.width / width;
+    const [w, h] = [projection.width, projection.height];
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    const samples = 8;
+    for (let i = 0; i <= samples; i++) {
+        for (const [x, y] of [[w * i / samples, 0], [w * i / samples, h], [0, h * i / samples], [w, h * i / samples]]) {
+            const pixel = wcs.toPixel(...projection.unproject(x, y));
+            if (!pixel) return null;
+            const u = (pixel[0] + 0.5) * k;
+            const v = (image.bottomUp ? height - pixel[1] - 0.5 : pixel[1] + 0.5) * k;
+            box[0] = Math.min(box[0], u);
+            box[1] = Math.min(box[1], v);
+            box[2] = Math.max(box[2], u);
+            box[3] = Math.max(box[3], v);
+        }
+    }
+    // the edges of the view may bend on the picture: a margin of a tenth of the region
+    const margin = 0.1 * Math.max(box[2] - box[0], box[3] - box[1]);
+    const region = [Math.max(0, box[0] - margin), Math.max(0, box[1] - margin),
+        Math.min(image.bitmap.width, box[2] + margin), Math.min(image.bitmap.height, box[3] + margin)];
+    return region[2] > region[0] && region[3] > region[1] ? region : null;
+}
+
+/**
+ * Draws an image on the view: each cell of its mesh is two triangles, each stretched to where its vertices are,
+ * even far outside the view, where the cells of a view zoomed in on the image have them.
+ */
 function drawImageMesh(context, projection, image, mesh) {
-    const points = mesh.vertices.map(v => projection.project(v.sky[0], v.sky[1]));
+    const points = mesh.vertices.map(v => projection.project(v.sky[0], v.sky[1], true));
     const at = (i, j) => (mesh.nx + 1) * j + i;
     for (let j = 0; j < mesh.ny; j++) {
         for (let i = 0; i < mesh.nx; i++) {
@@ -429,7 +577,12 @@ function drawTriangle(context, image, from, to) {
     context.closePath();
     context.clip();
     context.transform(a, b, c, d, e, f);
-    context.drawImage(image, 0, 0);
+    // only the part of the image under the triangle, with a pixel around it: images at their size are large
+    const sx = Math.max(0, Math.floor(Math.min(x0, x1, x2)) - 1);
+    const sy = Math.max(0, Math.floor(Math.min(y0, y1, y2)) - 1);
+    const sw = Math.min(image.width, Math.ceil(Math.max(x0, x1, x2)) + 1) - sx;
+    const sh = Math.min(image.height, Math.ceil(Math.max(y0, y1, y2)) + 1) - sy;
+    if (sw > 0 && sh > 0) context.drawImage(image, sx, sy, sw, sh, sx, sy, sw, sh);
     context.restore();
 }
 
@@ -613,74 +766,111 @@ function drawViewObjects(content, projection, objects, taken) {
  * The view as a JPEG image, as it is: larger than on the screen, so that the image keeps its resolution
  * where the view shows it, within what browsers can encode. The annotations are scaled with it.
  *
- * @param picture the picture of the image, or null when the image isn't shown
+ * @param thumbnail the picture of the image, {bitmap, bottomUp, mesh}, or null when the image isn't shown
+ * @param decodeFull gives a promise of the image at its size in the same form, or of null, which the view keeps
  * @return a promise of the file, or of null when the browser can't encode it
  */
-async function renderView(projection, picture, svg, stage, solution) {
+async function renderView(projection, thumbnail, decodeFull, svg, stage, solution) {
     const {width, height} = projection;
     const cap = Math.min(MAX_SAVED_SIDE / Math.max(width, height), Math.sqrt(MAX_SAVED_PIXELS / (width * height)));
     let factor = Math.min(cap, 2);
-    let image = null;
-    let mesh = null;
-    let full = null;
-    if (picture) {
-        image = picture.bitmap;
-        mesh = imageMesh(solution, image, picture.bottomUp);
-        // the pixels of the image along its width, and of the view
-        const imageWidth = Math.round(solution.fieldWidth * 3600 / solution.scale);
-        const [first, last] = [mesh.vertices[0], mesh.vertices[mesh.nx]].map(v => projection.project(v.sky[0], v.sky[1]));
-        const onView = first && last ? Math.hypot(last[0] - first[0], last[1] - first[1]) : 0;
-        if (onView > 0) {
-            factor = Math.min(cap, Math.max(factor, imageWidth / onView));
-            // the picture is a thumbnail: the image at its size is decoded when the view shows more of it
-            if (factor > 1.01 * image.width / onView) {
-                full = await picture.full();
-                if (full) {
-                    image = full.bitmap;
-                    mesh = imageMesh(solution, image, full.bottomUp);
-                }
-            }
+    let image = thumbnail;
+    if (thumbnail) {
+        const zoom = zoomOf(projection, solution);
+        factor = Math.min(cap, Math.max(factor, 1 / zoom));
+        // the picture is a thumbnail: the image at its size is used when the saved view shows more of it
+        if (factor * zoom * imageSize(solution).width > SHARPER * thumbnail.bitmap.width) {
+            image = await decodeFull() || thumbnail;
         }
     }
+    const canvas = savedCanvas(Math.round(width * factor), Math.round(height * factor), stage);
+    const context = canvas.getContext('2d');
+    context.setTransform(factor, 0, 0, factor, 0, 0);
+    if (image) {
+        drawImage(context, projection, solution, image);
+    }
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    if (svg.childNodes.length) {
+        await drawOverlay(context, svg, stage);
+    }
+    return await encode(canvas);
+}
+
+/**
+ * The whole image at its size, as a JPEG image, with its annotations when asked: the grid of coordinates, the
+ * deep sky objects of the solution, the compass, and the constellations of wide images. They are laid out as on a
+ * view of {@link SAVED_LAYOUT_WIDTH} pixels, and scaled with the image. Images larger than what browsers can
+ * encode are scaled down.
+ *
+ * @param thumbnail the picture of the image, {bitmap, bottomUp, mesh}
+ * @param decodeFull gives a promise of the image at its size in the same form, or of null, which the view keeps
+ * @param skyData the constellations, or null when they aren't loaded
+ * @return a promise of the file, or of null when the browser can't make it
+ */
+async function renderImage(solution, thumbnail, decodeFull, annotations, skyData, stage) {
+    const size = imageSize(solution);
+    const factor = Math.min(1, MAX_SAVED_IMAGE_SIDE / Math.max(size.width, size.height), Math.sqrt(MAX_SAVED_PIXELS / (size.width * size.height)));
+    const {bitmap, bottomUp} = await decodeFull() || thumbnail;
+    const canvas = savedCanvas(Math.round(size.width * factor), Math.round(size.height * factor), stage);
+    const context = canvas.getContext('2d');
+    // the picture shows the image as the view does, its rows bottom up or not
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    if (annotations) {
+        const projection = new ImageProjection(solution, SAVED_LAYOUT_WIDTH, bottomUp);
+        const svg = svgElement('svg', {viewBox: `0 0 ${projection.width} ${projection.height}`});
+        const taken = [[projection.width - COMPASS, 0, projection.width, COMPASS]];
+        drawViewGrid(svg, projection, taken);
+        if (skyData && Math.hypot(solution.fieldWidth, solution.fieldHeight) > SAVED_CONSTELLATIONS) {
+            drawConstellations(svg, projection, skyData, solution.constellation.abbreviation, true, true);
+        }
+        drawViewObjects(svg, projection, solution.objects || [], taken);
+        drawViewCompass(svg, projection);
+        await drawOverlay(context, svg, stage);
+    }
+    return await encode(canvas);
+}
+
+/** The canvas of a saved image, filled with the background of the view. */
+function savedCanvas(width, height, stage) {
+    const canvas = element('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.fillStyle = getComputedStyle(stage).backgroundColor;
+    context.fillRect(0, 0, width, height);
+    return canvas;
+}
+
+/**
+ * Draws annotations on the whole canvas of a saved image: an image of their own, with the rules of the page which
+ * style them, scaled from their view box.
+ */
+async function drawOverlay(context, svg, stage) {
+    const {width, height} = context.canvas;
+    const copy = svg.cloneNode(true);
+    copy.setAttribute('width', width);
+    copy.setAttribute('height', height);
+    const rules = [...document.styleSheets].flatMap(sheet => {
+        try {
+            return [...sheet.cssRules];
+        } catch {
+            return [];
+        }
+    }).map(rule => rule.cssText).filter(text => text.includes('.sky-'));
+    const font = getComputedStyle(stage).fontFamily;
+    copy.prepend(svgElement('style', {}, `svg { font-family: ${font}; }\n${rules.join('\n')}`));
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], {type: 'image/svg+xml'}));
     try {
-        const canvas = element('canvas');
-        canvas.width = Math.round(width * factor);
-        canvas.height = Math.round(height * factor);
-        const context = canvas.getContext('2d');
-        context.fillStyle = getComputedStyle(stage).backgroundColor;
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.setTransform(factor, 0, 0, factor, 0, 0);
-        if (image) {
-            drawImageMesh(context, projection, image, mesh);
-        }
-        context.setTransform(1, 0, 0, 1, 0, 0);
-        if (svg.childNodes.length) {
-            // the annotations as drawn, an image of their own, with the rules of the page which style them
-            const copy = svg.cloneNode(true);
-            copy.setAttribute('width', canvas.width);
-            copy.setAttribute('height', canvas.height);
-            const rules = [...document.styleSheets].flatMap(sheet => {
-                try {
-                    return [...sheet.cssRules];
-                } catch {
-                    return [];
-                }
-            }).map(rule => rule.cssText).filter(text => text.includes('.sky-'));
-            const font = getComputedStyle(stage).fontFamily;
-            copy.prepend(svgElement('style', {}, `svg { font-family: ${font}; }\n${rules.join('\n')}`));
-            const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], {type: 'image/svg+xml'}));
-            try {
-                const overlay = new Image();
-                overlay.src = url;
-                await overlay.decode();
-                context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
-            } finally {
-                URL.revokeObjectURL(url);
-            }
-        }
-        // null when the canvas is larger than what the browser can encode
-        return await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+        const overlay = new Image();
+        overlay.src = url;
+        await overlay.decode();
+        context.drawImage(overlay, 0, 0, width, height);
     } finally {
-        if (full) full.bitmap.close();
+        URL.revokeObjectURL(url);
     }
+}
+
+/** A canvas as a JPEG file: a promise of null when it's larger than what the browser can encode. */
+function encode(canvas) {
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
 }
