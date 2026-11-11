@@ -109,6 +109,7 @@ public final class IndexBuilder {
         var spillFile = output.resolveSibling(output.getFileName() + ".quads.tmp");
         var tmp = output.resolveSibling(output.getFileName() + ".tmp");
         Files.createDirectories(output.toAbsolutePath().getParent());
+        var written = false;
         try (var spill = new QuadSpill(spillFile)) {
             buildQuads(grids, pyramidLevels, levelFirst, origOf, rank, byRank, vec, spill);
             var nQuads = Math.toIntExact(spill.count());
@@ -191,8 +192,13 @@ public final class IndexBuilder {
                 writeSortedQuads(spill, quadCellStart, bins, w, quadCodesOffset, quadStarsOffset, quadAuxOffset);
                 w.flush();
             }
+            written = true;
         } finally {
             Files.deleteIfExists(spillFile);
+            // a build which failed or was cancelled leaves nothing, the size of the index, behind
+            if (!written) {
+                Files.deleteIfExists(tmp);
+            }
         }
         Files.move(tmp, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }

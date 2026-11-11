@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 from . import _native
-from ._native import AsterionError
+from ._native import AsterionError, Cancellation
 
 PathLike = Union[str, bytes, os.PathLike]
 
 
 class InstallationCancelled(AsterionError):
-    """The progress callback stopped the installation of a catalog. Installing it again resumes it."""
+    """The progress callback or a Cancellation stopped the installation of a catalog. Installing it again resumes it."""
 
 
 InstallationCancelled.__module__ = "asterion"
@@ -113,7 +113,8 @@ def catalogs(directory: Optional[PathLike] = None) -> list[Catalog]:
 
 
 def install_catalog(name: str, directory: Optional[PathLike] = None,
-                    progress: Optional[Callable[[Progress], Optional[bool]]] = None) -> None:
+                    progress: Optional[Callable[[Progress], Optional[bool]]] = None,
+                    cancellation: Optional[Cancellation] = None) -> None:
     """
     Installs a catalog, such as "tycho2" or "gaia-500", the way asterion --download-catalog does, and returns when
     it's over. An interrupted installation resumes its download the next time. Ctrl-C cancels it, between two events
@@ -125,9 +126,11 @@ def install_catalog(name: str, directory: Optional[PathLike] = None,
         progress: receives the progress, on the calling thread: returning True cancels the installation, which raises
             InstallationCancelled. An exception of the callback, such as KeyboardInterrupt, cancels it too, and is
             raised once the installation stopped.
+        cancellation: cancels the installation from another thread, see Cancellation: unlike the callback, which is
+            only called when there's progress, which can take minutes, it's read all along
 
     Raises:
-        InstallationCancelled: if the callback cancelled the installation
+        InstallationCancelled: if the callback or the cancellation cancelled the installation
         AsterionError: if the catalog is unknown, or can't be installed
     """
     failure = None
@@ -143,7 +146,8 @@ def install_catalog(name: str, directory: Optional[PathLike] = None,
 
     # the callback must stay referenced while the library may call it
     callback = _native.ProgressCallback(receive)
-    status = _native.call("asterion_install_catalog", _native.path(directory), name.encode("utf-8"), callback, None)
+    status = _native.call("asterion_install_catalog_cancellable", _native.path(directory), name.encode("utf-8"), callback,
+                          None, _native.flag(cancellation))
     if failure is not None:
         raise failure
     if status == _native.CANCELLED:

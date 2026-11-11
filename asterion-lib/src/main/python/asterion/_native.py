@@ -31,6 +31,35 @@ class AsterionError(Exception):
 AsterionError.__module__ = "asterion"
 
 
+class Cancellation:
+    """
+    Cancels solves and installations of catalogs from another thread, such as the one of a user interface: a solve
+    or an installation given a cancellation stops as soon as it can once it's cancelled. A cancellation stays
+    cancelled, and can be given to several of them.
+    """
+
+    def __init__(self):
+        # the flag which the library reads while it solves or installs
+        self._flag = c.c_int32(0)
+
+    def cancel(self) -> None:
+        """Cancels what was given this cancellation, from any thread."""
+        self._flag.value = 1
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether cancel was called."""
+        return self._flag.value != 0
+
+
+Cancellation.__module__ = "asterion"
+
+
+def flag(cancellation):
+    """The flag of a cancellation, which the library reads, or None for none."""
+    return c.byref(cancellation._flag) if cancellation is not None else None
+
+
 # The structures of asterion.h, field by field: ASTERION_MAX_SIP_ORDER and ASTERION_MAX_SIP_INVERSE_ORDER
 _SIP = c.c_double * 6 * 6
 _SIP_INVERSE = c.c_double * 8 * 8
@@ -95,6 +124,7 @@ _SIGNATURES = {
     "asterion_default_catalog_directory": (c.c_int, [_p, c.c_char_p, c.c_size_t]),
     "asterion_catalogs": (c.c_int, [_p, c.c_char_p, c.POINTER(Catalog), c.c_int]),
     "asterion_install_catalog": (c.c_int, [_p, c.c_char_p, c.c_char_p, ProgressCallback, _p]),
+    "asterion_install_catalog_cancellable": (c.c_int, [_p, c.c_char_p, c.c_char_p, ProgressCallback, _p, c.POINTER(c.c_int32)]),
     "asterion_open": (c.c_int, [_p, c.c_char_p, c.POINTER(_p)]),
     "asterion_close": (c.c_int, [_p, _p]),
     "asterion_default_options": (c.c_int, [_p, c.POINTER(Options)]),

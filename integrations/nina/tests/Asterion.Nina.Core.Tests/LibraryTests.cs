@@ -131,6 +131,17 @@ public class LibraryTests {
     }
 
     [Fact]
+    public void AnInstallationWhichIsCancelledDownloadsNothing() {
+        if (TestedLibrary == null) {
+            return;
+        }
+        using var catalogs = new TemporaryDirectory();
+        Assert.ThrowsAny<OperationCanceledException>(() =>
+            AsterionLibrary.Load(TestedLibrary).InstallCatalog("gaia-1500", catalogs.Path, null, new CancellationToken(true)));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(catalogs.Path));
+    }
+
+    [Fact]
     public void TellsWhenNoCatalogIsInstalled() {
         if (TestedLibrary == null) {
             return;

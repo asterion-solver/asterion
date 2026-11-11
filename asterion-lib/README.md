@@ -105,6 +105,17 @@ on the thread which installs, one event at a time, for every 1% of each step at 
 installation stops as soon as it can, and `asterion_install_catalog` returns `ASTERION_CANCELLED` when it has.
 The part which was downloaded is kept: installing the catalog again resumes the download.
 
+The function is only called when there's progress, though, which can take minutes, such as while the Gaia
+archives answer the queries of a catalog which is built. A program which cancels from another thread, such as
+the one of a user interface, calls `asterion_install_catalog_cancellable` instead, which takes a flag, like a
+solve which can be cancelled, and reads it all along:
+
+```c
+volatile int32_t cancel = 0;                          // stays valid until the installation returns
+// on another thread: cancel = 1;
+int status = asterion_install_catalog_cancellable(thread, NULL, "gaia-1500", progress, NULL, &cancel);
+```
+
 A solver uses the catalogs which were installed when it was opened: to use a new one, the program opens
 another solver. A catalog which an open solver uses is installed again only once that solver is closed.
 

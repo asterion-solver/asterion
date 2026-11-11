@@ -21,6 +21,7 @@
  *
  * NAME is installed in DIRECTORY, each event of the installation printing a line, and the installation
  * is cancelled after CANCEL_AFTER progress events, if given. The catalogs are listed before and after.
+ * NAME is then installed with a flag which doesn't cancel, and tycho2 with one which does.
  */
 // first: the header includes what it needs
 #include "asterion.h"
@@ -106,6 +107,14 @@ int main(int argc, char **argv) {
         asterion_error(thread, text, sizeof text);
         printf("installed: status=%d error=\"%s\"\n", status, status == 0 ? "" : text);
         list(thread, directory);
+
+        // a flag which is set before the installation cancels it before it starts
+        volatile int32_t cancel = 0;
+        int not_cancelled = asterion_install_catalog_cancellable(thread, directory, argv[2], NULL, NULL, &cancel);
+        cancel = 1;
+        int cancelled = asterion_install_catalog_cancellable(thread, directory, "tycho2", NULL, NULL, &cancel);
+        asterion_error(thread, text, sizeof text);
+        printf("cancellable: not_cancelled=%d cancelled=%d error=\"%s\"\n", not_cancelled, cancelled, text);
     }
     graal_tear_down_isolate(thread);
     return 0;

@@ -121,7 +121,7 @@ internal sealed unsafe class NativeFunctions {
     public readonly delegate* unmanaged<nint, byte*, nuint, int> Version;
     public readonly delegate* unmanaged<nint, byte*, nuint, int> DefaultCatalogDirectory;
     public readonly delegate* unmanaged<nint, byte*, NativeCatalog*, int, int> Catalogs;
-    public readonly delegate* unmanaged<nint, byte*, byte*, delegate* unmanaged<NativeProgress*, nint, int>, nint, int> InstallCatalog;
+    public readonly delegate* unmanaged<nint, byte*, byte*, delegate* unmanaged<NativeProgress*, nint, int>, nint, int*, int> InstallCatalogCancellable;
     public readonly delegate* unmanaged<nint, byte*, nint*, int> Open;
     public readonly delegate* unmanaged<nint, nint, int> Close;
     public readonly delegate* unmanaged<nint, NativeOptions*, int> DefaultOptions;
@@ -139,7 +139,8 @@ internal sealed unsafe class NativeFunctions {
         Version = (delegate* unmanaged<nint, byte*, nuint, int>) Export("asterion_version");
         DefaultCatalogDirectory = (delegate* unmanaged<nint, byte*, nuint, int>) Export("asterion_default_catalog_directory");
         Catalogs = (delegate* unmanaged<nint, byte*, NativeCatalog*, int, int>) Export("asterion_catalogs");
-        InstallCatalog = (delegate* unmanaged<nint, byte*, byte*, delegate* unmanaged<NativeProgress*, nint, int>, nint, int>) Export("asterion_install_catalog");
+        InstallCatalogCancellable = (delegate* unmanaged<nint, byte*, byte*, delegate* unmanaged<NativeProgress*, nint, int>, nint, int*, int>)
+            Export("asterion_install_catalog_cancellable");
         Open = (delegate* unmanaged<nint, byte*, nint*, int>) Export("asterion_open");
         Close = (delegate* unmanaged<nint, nint, int>) Export("asterion_close");
         DefaultOptions = (delegate* unmanaged<nint, NativeOptions*, int>) Export("asterion_default_options");

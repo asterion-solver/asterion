@@ -20,6 +20,7 @@ import ctypes
 import os
 import random
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -90,6 +91,14 @@ class CatalogsTest(unittest.TestCase):
         with self.assertRaisesRegex(asterion.AsterionError, "Unknown catalog no-such-catalog"):
             asterion.install_catalog("no-such-catalog", CATALOGS)
 
+    def test_a_cancelled_installation_downloads_nothing(self):
+        cancellation = asterion.Cancellation()
+        cancellation.cancel()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(asterion.InstallationCancelled):
+                asterion.install_catalog("tycho2", directory, cancellation=cancellation)
+            self.assertEqual([], os.listdir(directory))
+
 
 class InstallationTest(unittest.TestCase):
     """The progress of an installation, which the library reports to the callback: replaced here by events, to
@@ -97,7 +106,7 @@ class InstallationTest(unittest.TestCase):
 
     def install(self, progress, cancelled_status=_native.CANCELLED):
         def call(name, *arguments):
-            if name != "asterion_install_catalog":
+            if name != "asterion_install_catalog_cancellable":
                 return original(name, *arguments)
             callback = arguments[2]
             for event in (_native.Progress(event=1, total=10, step=b"Downloading", unit=b"MB", fraction=0.0, bytes=-1),

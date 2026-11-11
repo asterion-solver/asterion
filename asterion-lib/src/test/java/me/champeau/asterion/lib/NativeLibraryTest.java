@@ -167,6 +167,8 @@ class NativeLibraryTest {
         // installing what Asterion doesn't know fails at once, and says why
         assertEquals("status=-1 error=\"Unknown catalog no-such-catalog: asterion_catalogs lists them\"", line(lines, "installed: "),
                 output);
+        // a flag which isn't set doesn't cancel, and one which is cancels before anything is downloaded
+        assertEquals("not_cancelled=-1 cancelled=-2 error=\"The installation was cancelled\"", line(lines, "cancellable: "), output);
     }
 
     @Test

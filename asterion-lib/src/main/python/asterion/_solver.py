@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 from . import _native
 from ._catalogs import PathLike
-from ._native import AsterionError
+from ._native import AsterionError, Cancellation
 
 # The sample types by their names, then by their kinds, as __array_interface__ names them: code, size
 _SAMPLE_TYPES = {"uint8": (_native.UINT8, 1), "uint16": (_native.UINT16, 2), "float32": (_native.FLOAT32, 4)}
@@ -246,27 +246,6 @@ class SolveCancelled(AsterionError):
 SolveCancelled.__module__ = "asterion"
 
 
-class Cancellation:
-    """
-    Cancels solves from another thread: a solve given a cancellation stops as soon as it can once it's cancelled, and
-    raises SolveCancelled, unless the image was solved before. A cancellation stays cancelled, and can be given to
-    several solves.
-    """
-
-    def __init__(self):
-        # the flag which the library reads while it solves
-        self._flag = c.c_int32(0)
-
-    def cancel(self) -> None:
-        """Cancels the solves which were given this cancellation, from any thread."""
-        self._flag.value = 1
-
-    @property
-    def cancelled(self) -> bool:
-        """Whether cancel was called."""
-        return self._flag.value != 0
-
-
 class Solver:
     """
     A solver, with the catalogs which are installed in a directory: they stay open between solves, which keeps
@@ -372,10 +351,10 @@ class Solver:
         image = _Image.of(pixels, width, height, sample_type, row_stride)
         solution = _native.Solution()
         result = c.c_void_p()
-        flag = c.byref(cancellation._flag) if cancellation is not None else None
         with self._solve() as handle, image.address() as address:
             status = _native.call("asterion_solve_cancellable", handle, address, image.code, image.width, image.height,
-                                  image.row_stride, int(bayer), c.byref(options), c.byref(solution), c.byref(result), flag)
+                                  image.row_stride, int(bayer), c.byref(options), c.byref(solution), c.byref(result),
+                                  _native.flag(cancellation))
         if status == _native.CANCELLED:
             raise SolveCancelled("The solve was cancelled")
         _native.check(status)

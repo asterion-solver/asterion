@@ -155,12 +155,19 @@ public sealed unsafe class AsterionLibrary {
     /// <exception cref="OperationCanceledException">if the installation is cancelled</exception>
     public void InstallCatalog(string name, string? directory, IProgress<DownloadProgress>? progress, CancellationToken cancellation) {
         using var attachment = Attach();
-        var installation = new Installation(progress, cancellation);
+        var installation = new Installation(progress);
         var handle = GCHandle.Alloc(installation);
+        // the flag which cancels the installation, which the token sets on the thread which cancels: the library reads
+        // it all along, while the progress, which can cancel too, may not come for minutes
+        var cancel = (int*) NativeMemory.AllocZeroed(sizeof(int));
         try {
             int status;
-            fixed (byte* path = NativeFunctions.Utf8(directory), catalog = NativeFunctions.Utf8(name)) {
-                status = functions.InstallCatalog(attachment.Thread, path, catalog, &Installation.Report, GCHandle.ToIntPtr(handle));
+            // disposing the registration waits for its callback, if it runs: the flag is freed afterwards
+            using (cancellation.Register(() => Interlocked.Exchange(ref *cancel, 1))) {
+                fixed (byte* path = NativeFunctions.Utf8(directory), catalog = NativeFunctions.Utf8(name)) {
+                    status = functions.InstallCatalogCancellable(attachment.Thread, path, catalog, &Installation.Report,
+                        GCHandle.ToIntPtr(handle), cancel);
+                }
             }
             if (status == NativeFunctions.Cancelled) {
                 if (installation.Failure is { } failure) {
@@ -174,13 +181,13 @@ public sealed unsafe class AsterionLibrary {
             }
         } finally {
             handle.Free();
+            NativeMemory.Free(cancel);
         }
     }
 
     /// <summary>What an installation reports to, which the callback of the library finds by its handle.</summary>
-    private sealed class Installation(IProgress<DownloadProgress>? progress, CancellationToken cancellation) {
+    private sealed class Installation(IProgress<DownloadProgress>? progress) {
         private IProgress<DownloadProgress>? Progress { get; } = progress;
-        private CancellationToken Cancellation { get; } = cancellation;
 
         /// <summary>An exception of the progress, which cancelled the installation, and is thrown once it stopped.</summary>
         public Exception? Failure { get; private set; }
@@ -192,7 +199,7 @@ public sealed unsafe class AsterionLibrary {
                 if (DownloadProgress.Of(progress) is { } reported) {
                     installation.Progress?.Report(reported);
                 }
-                return installation.Cancellation.IsCancellationRequested ? 1 : 0;
+                return 0;
             } catch (Exception e) {
                 // an exception can't cross the library: it cancels, and is thrown afterwards
                 installation.Failure = e;

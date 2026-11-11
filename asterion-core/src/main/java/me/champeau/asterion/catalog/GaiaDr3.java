@@ -19,7 +19,7 @@ import me.champeau.asterion.progress.ProgressListener;
 import me.champeau.asterion.progress.ProgressTracker;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.InterruptedIOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpRequest;
@@ -32,8 +32,6 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ForkJoinPool;
-import java.util.stream.IntStream;
 
 /**
  * Downloads stars of the Gaia DR3 catalogue (Gaia Collaboration, 2022) from the archive of the
@@ -100,25 +98,21 @@ public final class GaiaDr3 {
         var description = "Downloading %,d stars of Gaia DR3 from the Gaia archive and its mirrors".formatted((long) perChunk * CHUNKS);
         var gaiaServers = new Mirrors<>(servers, Server::name, progress);
         try (var downloader = new Downloader();
-             var pool = new ForkJoinPool(CONNECTIONS);
              var tracker = ProgressTracker.start(progress, description, CHUNKS, "regions")) {
-            pool.submit(() -> IntStream.range(0, CHUNKS).parallel().forEach(chunk -> {
-                try {
-                    var file = workDirectory.resolve(String.format(Locale.ROOT, "gaia-%03d.csv", chunk));
-                    if (!Files.exists(file)) {
-                        download(downloader, gaiaServers, chunk, perChunk, density, file);
-                    }
-                    tracker.advance(1, Files.size(file));
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
+            ParallelDownloads.run(CONNECTIONS, CHUNKS, chunk -> {
+                var file = workDirectory.resolve(String.format(Locale.ROOT, "gaia-%03d.csv", chunk));
+                if (!Files.exists(file)) {
+                    download(downloader, gaiaServers, chunk, perChunk, density, file);
                 }
-            })).join();
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
+                tracker.advance(1, Files.size(file));
+            });
         }
         progress.info("Reading Gaia DR3");
         var stars = new StarData(EPOCH, perChunk * CHUNKS);
         for (var chunk = 0; chunk < CHUNKS; chunk++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new InterruptedIOException("Reading Gaia DR3 was interrupted");
+            }
             read(workDirectory.resolve(String.format(Locale.ROOT, "gaia-%03d.csv", chunk)), stars);
         }
         return stars;

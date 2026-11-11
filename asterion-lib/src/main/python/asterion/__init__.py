@@ -28,8 +28,8 @@ from importlib import metadata as _metadata
 
 from ._catalogs import (Catalog, InstallationCancelled, Progress, catalogs, default_catalog_directory, install_catalog,
                         version)
-from ._native import AsterionError
-from ._solver import Cancellation, DeepSkyObject, Match, Result, SolveCancelled, Solver
+from ._native import AsterionError, Cancellation
+from ._solver import DeepSkyObject, Match, Result, SolveCancelled, Solver
 
 try:
     __version__ = _metadata.version("asterion-solver")

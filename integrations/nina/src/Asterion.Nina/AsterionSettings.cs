@@ -65,7 +65,7 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
             OnPropertyChanged(nameof(TimeoutSeconds));
             _ = RefreshAsync();
         };
-        CancelDownload = new Command(() => download?.Cancel());
+        CancelDownload = new Command(StopDownload);
         InstallCustomDensity = new Command(() => _ = DownloadAsync(new Catalog(GaiaDensity.Name(customDensity), "", false, 0)));
         Refresh = new Command(() => _ = RefreshAsync());
         _ = RefreshAsync();
@@ -243,6 +243,14 @@ public sealed class AsterionSettings : INotifyPropertyChanged {
             DownloadStatus = "";
             statusMediator.StatusUpdate(new ApplicationStatus { Source = "Asterion", Status = string.Empty });
             await RefreshAsync();
+        }
+    }
+
+    /// <summary>Cancels the download, which stops a moment later: until then, the status tells that it stops.</summary>
+    private void StopDownload() {
+        if (download is { IsCancellationRequested: false } running) {
+            running.Cancel();
+            ShowProgress("Stopping the download", null);
         }
     }
 

@@ -20,17 +20,20 @@ import me.champeau.asterion.progress.ProgressStep;
 import me.champeau.asterion.progress.ProgressTracker;
 import me.champeau.asterion.progress.ProgressUpdate;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -143,11 +146,61 @@ class InstallationTest {
     }
 
     @Test
+    @Timeout(10)
+    void theProgramCancelsWhileThereIsNoProgress() {
+        var cancel = new AtomicBoolean();
+        var interrupted = new AtomicBoolean();
+        assertThrows(CancellationException.class, () -> Installation.run(progress -> {
+            try {
+                // a query which a server takes minutes to answer
+                cancel.set(true);
+                new CountDownLatch(1).await();
+                return INSTALLED;
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+                throw new IOException("The download was interrupted", e);
+            }
+        }, new Recorder(), cancel::get));
+
+        assertTrue(interrupted.get());
+    }
+
+    @Test
+    @Timeout(10)
+    void threadsWhichIgnoreInterruptionsStopWhenTheyReportProgress() {
+        var recorder = new Recorder();
+        assertThrows(CancellationException.class, () -> Installation.run(progress -> {
+            // an index which a pool of threads builds: neither they nor what waits for them are interrupted
+            CompletableFuture.runAsync(() -> {
+                while (true) {
+                    progress.info("indexing");
+                }
+            }).join();
+            return INSTALLED;
+        }, recorder, () -> !recorder.events.isEmpty()));
+
+        // the program cancelled after the first event, and got nothing more
+        assertEquals(List.of("info indexing"), recorder.events);
+    }
+
+    @Test
+    void anInstallationWhichIsCancelledAlreadyDoesNotStart() {
+        var started = new AtomicBoolean();
+        assertThrows(CancellationException.class, () -> Installation.run(progress -> {
+            started.set(true);
+            return INSTALLED;
+        }, new Recorder(), () -> true));
+
+        assertFalse(started.get());
+    }
+
+    @Test
     void anInstallationWhichIsOverBeforeItCanStopSucceeds() throws IOException {
+        var recorder = new Recorder();
         var installed = Installation.run(progress -> {
             progress.info("installed");
             return INSTALLED;
-        }, new Recorder(), () -> true);
+        }, recorder, () -> !recorder.events.isEmpty());
 
         assertSame(INSTALLED, installed);
     }
