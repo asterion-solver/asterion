@@ -201,6 +201,9 @@ class WebServerTest {
         var invalid = post("/api/solve?ra=abc&dec=1", new byte[1000]);
         assertEquals(400, invalid.statusCode());
         assertEquals("{\"error\":\"Invalid value for ra: abc\"}", invalid.body());
+        var threshold = post("/api/solve?sigma=0", new byte[1000]);
+        assertEquals(400, threshold.statusCode());
+        assertEquals("{\"error\":\"Invalid value for sigma: 0\"}", threshold.body());
 
         var wrongMethod = get("/api/solve");
         assertEquals(400, wrongMethod.statusCode());
