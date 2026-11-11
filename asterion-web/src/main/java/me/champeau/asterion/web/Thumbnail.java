@@ -60,9 +60,10 @@ final class Thumbnail {
     static byte[] png(GrayImage image, int maxWidth, boolean bottomUp) throws IOException {
         var width = Math.min(maxWidth, image.width());
         var height = Math.max(1, (int) Math.round((double) image.height() * width / image.width()));
-        var reduced = reduce(image, width, height);
-        var pixels = stretch(reduced);
-        return encode(pixels, width, height, bottomUp);
+        // the statistics of the pixels of the image, whatever the size of the picture: a reduced one, whose pixels are
+        // averaged, has less noise, which would change the stretch
+        var stretch = Stretch.of(image.data());
+        return encode(stretch.apply(reduce(image, width, height)), width, height, bottomUp);
     }
 
     /**
@@ -115,37 +116,51 @@ final class Thumbnail {
     }
 
     /**
-     * The pixels as bytes: below the background noise is black, the brightest pixels are white,
+     * How pixels are displayed: below the background noise is black, the brightest pixels are white,
      * and a midtones transfer function puts the median at {@link #TARGET_MEDIAN}, which shows the
      * faint parts of linear data.
+     *
+     * @param black the value which is black
+     * @param range the values from black to white
+     * @param balance the midtones balance of the transfer function
      */
-    private static byte[] stretch(float[] values) {
-        var step = Math.max(1, values.length / SAMPLE);
-        var sample = new float[(values.length + step - 1) / step];
-        for (var i = 0; i < sample.length; i++) {
-            sample[i] = values[i * step];
+    private record Stretch(
+            double black,
+            double range,
+            double balance) {
+        /** The stretch of the pixels of an image, from a sample of them. */
+        static Stretch of(float[] values) {
+            var step = Math.max(1, values.length / SAMPLE);
+            var sample = new float[(values.length + step - 1) / step];
+            for (var i = 0; i < sample.length; i++) {
+                sample[i] = values[i * step];
+            }
+            Arrays.sort(sample);
+            var median = sample[sample.length / 2];
+            var deviations = new float[sample.length];
+            for (var i = 0; i < sample.length; i++) {
+                deviations[i] = Math.abs(sample[i] - median);
+            }
+            Arrays.sort(deviations);
+            var sigma = 1.4826 * deviations[deviations.length / 2];
+            var black = Math.max(sample[0], median - SHADOWS_CLIPPING * sigma);
+            var white = sample[Math.min(sample.length - 1, (int) (sample.length * (1 - HIGHLIGHTS_CLIPPING)))];
+            if (white <= black) {
+                white = sample[sample.length - 1];
+            }
+            var range = white > black ? white - black : 1;
+            return new Stretch(black, range, midtones((median - black) / range, TARGET_MEDIAN));
         }
-        Arrays.sort(sample);
-        var median = sample[sample.length / 2];
-        var deviations = new float[sample.length];
-        for (var i = 0; i < sample.length; i++) {
-            deviations[i] = Math.abs(sample[i] - median);
+
+        /** The pixels as bytes. */
+        byte[] apply(float[] values) {
+            var out = new byte[values.length];
+            for (var i = 0; i < values.length; i++) {
+                var x = Math.clamp((values[i] - black) / range, 0, 1);
+                out[i] = (byte) Math.round(255 * transfer(x, balance));
+            }
+            return out;
         }
-        Arrays.sort(deviations);
-        var sigma = 1.4826 * deviations[deviations.length / 2];
-        var black = Math.max(sample[0], median - SHADOWS_CLIPPING * sigma);
-        var white = sample[Math.min(sample.length - 1, (int) (sample.length * (1 - HIGHLIGHTS_CLIPPING)))];
-        if (white <= black) {
-            white = sample[sample.length - 1];
-        }
-        var range = white > black ? white - black : 1;
-        var m = midtones((median - black) / range, TARGET_MEDIAN);
-        var out = new byte[values.length];
-        for (var i = 0; i < values.length; i++) {
-            var x = Math.clamp((values[i] - black) / range, 0, 1);
-            out[i] = (byte) Math.round(255 * transfer(x, m));
-        }
-        return out;
     }
 
     /** The midtones balance which displays a value at a target: the inverse of {@link #transfer}. */

@@ -443,12 +443,13 @@ public final class WebServer implements AutoCloseable {
      *
      * @param maxWidth the width of the picture, at most, or 0 for the size of the image: the raw
      * frames of color sensors are binned 2x2, which shows their pixels without the pattern of their
-     * filters, but large images aren't, unlike the images which are solved
+     * filters, but large images aren't, unlike the images which are solved. A thumbnail is reduced
+     * from the same pixels, which give it the stretch of the picture at the size of the image
      */
     private static byte[] picture(SolvedImages.Image image, int maxWidth, boolean bottomUp) {
         try {
             var loaded = ImageLoader.load(image.file(), 0);
-            if (maxWidth == 0 && !loaded.hints().bayer() && loaded.image().width() < loaded.image().sourceWidth()) {
+            if (!loaded.hints().bayer() && loaded.image().width() < loaded.image().sourceWidth()) {
                 loaded = ImageLoader.load(image.file(), 1);
             }
             return Thumbnail.png(loaded.image(), maxWidth == 0 ? loaded.image().width() : maxWidth, bottomUp);

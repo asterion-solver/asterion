@@ -21,10 +21,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
+import java.awt.image.Raster;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.zip.GZIPOutputStream;
 
@@ -65,8 +67,33 @@ class ThumbnailTest {
         var nebula = raster.getSample(100, 100, 0);
         var star = raster.getSample(600, 250, 0);
         assertTrue(background > 10 && background < 90, "background " + background);
-        assertTrue(nebula > background + 30, "nebula " + nebula + ", background " + background);
+        assertTrue(nebula > background + 25, "nebula " + nebula + ", background " + background);
         assertEquals(255, star);
+    }
+
+    @Test
+    void stretchesThePictureAtItsSizeLikeTheThumbnail() throws Exception {
+        // the thumbnail averages the pixels, which lowers the noise, but doesn't change the stretch: the picture of the
+        // image at its size, which replaces it once the view is zoomed in, looks the same
+        var frame = frame(1600, 1000);
+        var thumbnail = ImageIO.read(new ByteArrayInputStream(Thumbnail.png(frame, 800, false))).getRaster();
+        var full = ImageIO.read(new ByteArrayInputStream(Thumbnail.png(frame, 1600, false))).getRaster();
+        for (var region : new int[][]{{100, 50, 300, 450}, {450, 50, 550, 200}}) {
+            var small = mean(thumbnail, region[0], region[1], region[2], region[3]);
+            var large = mean(full, 2 * region[0], 2 * region[1], 2 * region[2], 2 * region[3]);
+            assertEquals(large, small, 5, "the region " + Arrays.toString(region));
+        }
+    }
+
+    /** The mean of the pixels of a region of a picture. */
+    private static double mean(Raster raster, int x0, int y0, int x1, int y1) {
+        var sum = 0.0;
+        for (var y = y0; y < y1; y++) {
+            for (var x = x0; x < x1; x++) {
+                sum += raster.getSample(x, y, 0);
+            }
+        }
+        return sum / ((x1 - x0) * (y1 - y0));
     }
 
     @Test
