@@ -1,9 +1,9 @@
 name: Site
 
-# Deploys the site directory to GitHub Pages: https://asterion-solver.github.io/asterion/. It contains the
-# PixInsight update repository of the Asterion Solver script, site/pixinsight, which
-# integrations/pixinsight/build-repository.py writes for each release. The whole site is deployed each time:
-# other content, such as documentation, must be added to the site directory, or built here.
+# Deploys the site directory to GitHub Pages: https://asterion-solver.github.io/asterion/. The site has the PixInsight
+# update repository of the Asterion Solver script, site/pixinsight, which integrations/pixinsight/build-repository.py
+# builds here for the latest release: the Release workflow runs this workflow once it is published. The whole site is
+# deployed each time: other content, such as documentation, must be added to the site directory, or built here.
 on:
   push:
     branches: [ main ]
@@ -11,15 +11,12 @@ on:
       - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
   pages: write
   id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -27,6 +24,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          # the tags: the package is made of the files of the tag of the release
+          fetch-depth: 0
+      # the package of the latest release of GitHub: the same release gives the same package, which PixInsight doesn't
+      # offer again
+      - name: Build the PixInsight update repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          python3 integrations/pixinsight/build-repository.py "${tag#v}"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -36,6 +44,10 @@ jobs:
     name: Deploy
     needs: build
     runs-on: ubuntu-24.04
+    # in this job, rather than for the workflow: the Release workflow runs this one
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

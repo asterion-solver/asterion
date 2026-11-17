@@ -8,3 +8,5 @@ out/
 .vscode/
 .DS_Store
 __pycache__/
+# the PixInsight update repository, which the Site workflow builds
+site/pixinsight/

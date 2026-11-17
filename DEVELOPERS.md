@@ -201,12 +201,13 @@ The script uses two hidden options of the command line tool:
 ## Publishing the PixInsight script
 
 The PixInsight script is installed from a PixInsight update repository,
-`https://asterion-solver.github.io/asterion/pixinsight/`: the `site/pixinsight` directory, which the `Site`
-workflow deploys to GitHub Pages when it changes on `main`. GitHub Pages must use GitHub Actions as its
-source (Settings > Pages). The repository is an index, `updates.xri`, and the package of a version, a zip of
-the files which PixInsight installs, relative to its installation directory.
+`https://asterion-solver.github.io/asterion/pixinsight/`, which the `Site` workflow builds and deploys to GitHub
+Pages, in the `site/pixinsight` directory: for each release, which runs it once it is published, and on demand.
+GitHub Pages must use GitHub Actions as its source (Settings > Pages), and the workflow must run on `main`, which
+the `github-pages` environment allows to deploy. The repository is an index, `updates.xri`, and the package of a
+version, a zip of the files which PixInsight installs, relative to its installation directory.
 
-After a release, its package is written with:
+The workflow writes the package of the latest release of GitHub with:
 
 ```
 integrations/pixinsight/build-repository.py 0.3.0
@@ -216,8 +217,7 @@ It packages the script and the license of the tag of the release, `v0.3.0`, stam
 dates the package with the publication of the GitHub release, which it reads with the GitHub CLI. The
 package is deterministic: PixInsight knows whether a package is installed by its SHA-1, so building the
 same release again gives the same package, which PixInsight doesn't offer again. The index lists only the
-new package, and the previous ones are removed: PixInsight installs every listed package which isn't
-installed, in no defined order. Committing and pushing `site/pixinsight` publishes it.
+new package: PixInsight installs every listed package which isn't installed, in no defined order.
 
 `--working-tree` packages the script of the working copy instead, to test a package: `--output` writes it
 elsewhere, such as a directory served by `python3 -m http.server`, which PixInsight accepts as a repository at

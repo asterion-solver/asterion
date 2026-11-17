@@ -5,8 +5,8 @@ name: Release
 # release with the archives, the plugin, their checksums and a changelog, and the wheels of the Python
 # package are published to PyPI. Finally, the version of gradle.properties becomes the next development
 # version, which is committed and pushed: in a job of its own, so that a release can be published to PyPI
-# again by re-running its failed jobs. The plugin is proposed to N.I.N.A. by hand, for the releases which
-# matter to it: see nina-manifest.yml.
+# again by re-running its failed jobs. The site is deployed again, with the PixInsight update repository of the
+# release. The plugin is proposed to N.I.N.A. by hand, for the releases which matter to it: see nina-manifest.yml.
 on:
   workflow_dispatch:
     inputs:
@@ -121,6 +121,17 @@ jobs:
           path: dist
           merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The PixInsight update repository, with the package of the release: the release made with GITHUB_TOKEN doesn't
+  # start the Site workflow by itself
+  site:
+    name: Site
+    needs: release
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
 
   next-version:
     name: Next development version
